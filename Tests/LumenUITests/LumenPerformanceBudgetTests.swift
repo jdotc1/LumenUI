@@ -172,9 +172,10 @@ final class LumenPerformanceBudgetTests: XCTestCase {
 
     private static func logEntries(_ count: Int) -> [LumenLogEntry] {
         let base = Date(timeIntervalSince1970: 1_800_000_000)
-        return (0..<count).map { i in
-            LumenLogEntry(date: base.addingTimeInterval(Double(i) * 0.01), source: "source\(i % 12)",
-                          level: i % 31 == 0 ? .error : (i % 7 == 0 ? .warning : .log),
+        return (0..<count).map { (i: Int) -> LumenLogEntry in
+            let level: LumenLogEntry.Level = i % 31 == 0 ? .error : (i % 7 == 0 ? .warning : .log)
+            return LumenLogEntry(date: base.addingTimeInterval(Double(i) * 0.01), source: "source\(i % 12)",
+                                 level: level,
                           message: "Processed file \(i) of batch: /Volumes/Data/Images/Study\(i % 200)/Series\(i % 9)/IM\(i).dcm")
         }
     }
