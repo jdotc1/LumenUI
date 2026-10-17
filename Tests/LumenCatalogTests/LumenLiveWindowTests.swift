@@ -125,15 +125,20 @@ final class LumenLiveWindowTests: XCTestCase {
         XCTAssertEqual(minimum.width, CatalogLayout.windowMinWidth, accuracy: 0.5, "the Catalog window's minimum width")
         XCTAssertGreaterThan(minimum.height, 640, "the toolbar band adds to the content's 640 pt minimum height")
         let layout = layOut(catalog(), size: minimum, compact: false)
-        let split = try XCTUnwrap(layout.splits.first(where: { $0.columns.count >= 2 }), "no split view")
+        // The inspector surrounds navigation on older systems; the sidebar is the narrowest
+        // leading column, regardless of the native split nesting order.
+        let split = try XCTUnwrap(layout.splits.filter { $0.columns.count >= 2 }
+            .min { $0.columns[0].width < $1.columns[0].width }, "no split view")
         let geometry = layout.splits.enumerated().map { index, split in
             "split \(index): \(split.frame); columns: \(split.columns)"
         }.joined(separator: "; ")
         // Measured on base: the split view is 970 pt wide in the 890 pt window (the inspector takes
         // its 280 ideal, not its 220 minimum), centered at x −40, so 40 pt of the 210 pt sidebar are
         // off the window's leading edge and 170 show.
-        XCTAssertGreaterThanOrEqual(split.frame.minX, -0.5, "the split view starts \(Int(-split.frame.minX)) pt off the window's leading edge; \(geometry)")
-        XCTAssertLessThanOrEqual(split.frame.maxX, layout.width + 0.5, "the split view runs \(Int(split.frame.maxX - layout.width)) pt past the window's trailing edge; \(geometry)")
+        for measured in layout.splits {
+            XCTAssertGreaterThanOrEqual(measured.frame.minX, -0.5, "the split view starts \(Int(-measured.frame.minX)) pt off the window's leading edge; \(geometry)")
+            XCTAssertLessThanOrEqual(measured.frame.maxX, layout.width + 0.5, "the split view runs \(Int(measured.frame.maxX - layout.width)) pt past the window's trailing edge; \(geometry)")
+        }
         let sidebar = split.columns[0]
         let shown = min(sidebar.maxX, layout.width) - max(sidebar.minX, 0)
         XCTAssertGreaterThanOrEqual(shown, CatalogLayout.sidebarMinWidth - 0.5,
