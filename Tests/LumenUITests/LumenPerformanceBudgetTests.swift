@@ -24,7 +24,12 @@ final class LumenPerformanceBudgetTests: XCTestCase {
         return samples.sorted()[runs / 2]
     }
 
-    private func budget(_ name: String, _ ms: Double, under limit: Double) {
+    /// Budgets are set on the maintainer's Apple-silicon laptop. Shared CI virtual machines are
+    /// slower and noisier, so CI sets `LUMEN_PERF_BUDGET_SCALE` to widen every budget equally.
+    private static let budgetScale = ProcessInfo.processInfo.environment["LUMEN_PERF_BUDGET_SCALE"].flatMap(Double.init).map { max($0, 1) } ?? 1
+
+    private func budget(_ name: String, _ ms: Double, under unscaled: Double) {
+        let limit = unscaled * Self.budgetScale
         if ProcessInfo.processInfo.environment["LUMEN_BENCH"] == "1" {
             print("BENCH \(name): \(String(format: "%.2f", ms)) ms (budget \(Int(limit)) ms)")
         }
