@@ -242,7 +242,6 @@ struct CatalogView: View {
             }
             .background(palette[.bgCanvas])
             .frame(minWidth: CatalogLayout.pageMinWidth)
-            .modifier(CatalogDetailColumnWidth())
             .lumenPanelCommands(trailing: $showsInspector)
             .lumenInspector(isPresented: $showsInspector) {
                 CatalogInspector(page: page ?? .overview, hue: Binding(
@@ -250,6 +249,7 @@ struct CatalogView: View {
                     set: { hues[page ?? .overview] = $0 }))
             }
         }
+        .modifier(CatalogNavigationStyle())
         .navigationTitle("")
         .lumenCommandPalette(isPresented: $showsPalette, commands: paletteCommands, scopes: CatalogPalette.scopes,
                              recentsKey: "catalog.palette.recents", query: CatalogPalette.query, shortcut: nil)
@@ -286,14 +286,14 @@ struct CatalogView: View {
     }
 }
 
-/// Keep the page's native column preference separate from the inspector's width on older systems.
-private struct CatalogDetailColumnWidth: ViewModifier {
+/// Keep the detail beside the sidebar instead of letting it extend underneath on older systems.
+private struct CatalogNavigationStyle: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 27, *) {
             content
         } else {
-            content.navigationSplitViewColumnWidth(min: CatalogLayout.pageMinWidth, ideal: CatalogLayout.pageMinWidth)
+            content.navigationSplitViewStyle(.balanced)
         }
     }
 }
