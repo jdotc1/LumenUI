@@ -44,7 +44,7 @@ struct LumenCatalogApp: App {
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
                 .lumenMetrics(.standard)
-                .frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
+                .modifier(CatalogWindowMinimum())
                 .onAppear {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
@@ -219,55 +219,36 @@ struct CatalogView: View {
         ?? .overview
     @Environment(\.lumenPalette) private var palette
 
-    @ViewBuilder
-    private var navigationContent: some View {
-        if #available(macOS 27, *) {
-            navigation { pageContent.lumenInspector(isPresented: $showsInspector) { inspectorContent } }
-        } else {
-            // Nesting the inspector inside the detail makes both native splits claim the full
-            // window width on older systems. Let the inspector contain the navigation instead.
-            navigation { pageContent }
-                .lumenInspector(isPresented: $showsInspector) { inspectorContent }
-        }
-    }
-
-    private func navigation<Detail: View>(@ViewBuilder detail: () -> Detail) -> some View {
+    var body: some View {
         NavigationSplitView {
             // Drawn in the theme (Workbench's look), not the system's blue list highlight.
             LumenSourceList(CatalogPage.allCases.map { page in
                 LumenSourceListItem(id: page.rawValue, title: page.rawValue, systemImage: page.symbol, hue: hues[page] ?? page.hue)
             }, selection: Binding(get: { page?.rawValue }, set: { id in page = CatalogPage.allCases.first { $0.rawValue == id } }))
             .navigationSplitViewColumnWidth(min: CatalogLayout.sidebarMinWidth, ideal: CatalogLayout.sidebarIdealWidth, max: 300)
-        } detail: { detail() }
-    }
-
-    private var pageContent: some View {
-        // `LUMEN_CATALOG_SCROLL=bottom` scrolls the page to its end (for screenshots).
-        ScrollViewReader { proxy in
-            ScrollView {
-                CatalogPageView(page: page ?? .overview)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                Color.clear.frame(height: 1).id("catalog.bottom")
+        } detail: {
+            // `LUMEN_CATALOG_SCROLL=bottom` scrolls the page to its end (for screenshots).
+            ScrollViewReader { proxy in
+                ScrollView {
+                    CatalogPageView(page: page ?? .overview)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    Color.clear.frame(height: 1).id("catalog.bottom")
+                }
+                .task(id: page) {
+                    guard ProcessInfo.processInfo.environment["LUMEN_CATALOG_SCROLL"] == "bottom" else { return }
+                    try? await Task.sleep(for: .milliseconds(300))
+                    proxy.scrollTo("catalog.bottom", anchor: .bottom)
+                }
             }
-            .task(id: page) {
-                guard ProcessInfo.processInfo.environment["LUMEN_CATALOG_SCROLL"] == "bottom" else { return }
-                try? await Task.sleep(for: .milliseconds(300))
-                proxy.scrollTo("catalog.bottom", anchor: .bottom)
+            .background(palette[.bgCanvas])
+            .frame(minWidth: CatalogLayout.pageMinWidth)
+            .lumenPanelCommands(trailing: $showsInspector)
+            .lumenInspector(isPresented: $showsInspector) {
+                CatalogInspector(page: page ?? .overview, hue: Binding(
+                    get: { hues[page ?? .overview] ?? (page ?? .overview).hue },
+                    set: { hues[page ?? .overview] = $0 }))
             }
         }
-        .background(palette[.bgCanvas])
-        .frame(minWidth: CatalogLayout.pageMinWidth)
-        .lumenPanelCommands(trailing: $showsInspector)
-    }
-
-    private var inspectorContent: some View {
-        CatalogInspector(page: page ?? .overview, hue: Binding(
-            get: { hues[page ?? .overview] ?? (page ?? .overview).hue },
-            set: { hues[page ?? .overview] = $0 }))
-    }
-
-    var body: some View {
-        navigationContent
         .navigationTitle("")
         .lumenCommandPalette(isPresented: $showsPalette, commands: paletteCommands, scopes: CatalogPalette.scopes,
                              recentsKey: "catalog.palette.recents", query: CatalogPalette.query, shortcut: nil)
@@ -300,6 +281,20 @@ struct CatalogView: View {
                 try? await Task.sleep(for: .milliseconds(600))
                 openSettings()
             }
+        }
+    }
+}
+
+/// Keep the window minimum outside the native columns' sizing preferences. Older systems
+/// otherwise add the leading column to this whole-window minimum a second time.
+struct CatalogWindowMinimum: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 27, *) {
+            content.frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
+        } else {
+            GeometryReader { _ in content }
+                .frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
         }
     }
 }

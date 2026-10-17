@@ -30,6 +30,8 @@ final class LumenLiveWindowTests: XCTestCase {
         /// coordinates (x from the window's leading edge).
         var splits: [(frame: CGRect, columns: [CGRect])] = []
         var width: CGFloat = 0
+        var hostFrame: CGRect = .zero
+        var contentBounds: CGRect = .zero
         /// The window's content minimum, which AppKit takes from the hosted view when `sizing`
         /// includes `.minSize` (toolbar band included).
         var contentMinSize: CGSize = .zero
@@ -98,6 +100,8 @@ final class LumenLiveWindowTests: XCTestCase {
             }
             collect(frameView)
             layout.width = size.width
+            layout.hostFrame = host.frame
+            layout.contentBounds = window.contentView?.bounds ?? .zero
             layout.bar = box.bar
             layout.regionTop = box.top
             layout.contentMinSize = window.contentMinSize
@@ -112,7 +116,7 @@ final class LumenLiveWindowTests: XCTestCase {
     func catalog() -> some View {
         setenv("LUMEN_CATALOG_PAGE", "overview", 1)
         setenv("LUMEN_CATALOG_INSPECTOR", "1", 1)
-        return CatalogView().frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
+        return CatalogView().modifier(CatalogWindowMinimum())
     }
 
     /// At the window's minimum width NavigationSplitView gave the inspector 240 (not its 220
@@ -125,11 +129,10 @@ final class LumenLiveWindowTests: XCTestCase {
         XCTAssertEqual(minimum.width, CatalogLayout.windowMinWidth, accuracy: 0.5, "the Catalog window's minimum width")
         XCTAssertGreaterThan(minimum.height, 640, "the toolbar band adds to the content's 640 pt minimum height")
         let layout = layOut(catalog(), size: minimum, compact: false)
-        // The inspector surrounds navigation on older systems; the sidebar is the narrowest
-        // leading column, regardless of the native split nesting order.
+        // Identify the sidebar by its leading column, independent of native split nesting.
         let split = try XCTUnwrap(layout.splits.filter { $0.columns.count >= 2 }
             .min { $0.columns[0].width < $1.columns[0].width }, "no split view")
-        let geometry = layout.splits.enumerated().map { index, split in
+        let geometry = "minimum: \(minimum); host: \(layout.hostFrame); content: \(layout.contentBounds); " + layout.splits.enumerated().map { index, split in
             "split \(index): \(split.frame); columns: \(split.columns)"
         }.joined(separator: "; ")
         // Measured on base: the split view is 970 pt wide in the 890 pt window (the inspector takes
