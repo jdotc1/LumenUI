@@ -13,9 +13,13 @@ final class LumenPerformanceBudgetTests: XCTestCase {
     private func milliseconds(runs: Int = 5, _ body: () -> Void) -> Double {
         var samples: [Double] = []
         for _ in 0..<runs {
-            let start = DispatchTime.now().uptimeNanoseconds
-            body()
-            samples.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000)
+            // Keep native objects from one sample out of the next sample's lifetime.
+            let elapsed = autoreleasepool {
+                let start = DispatchTime.now().uptimeNanoseconds
+                body()
+                return Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+            }
+            samples.append(elapsed)
         }
         return samples.sorted()[runs / 2]
     }
@@ -101,6 +105,11 @@ final class LumenPerformanceBudgetTests: XCTestCase {
         let window: NSWindow
         let host: NSView
         init(_ window: NSWindow, _ host: NSView) { self.window = window; self.host = host }
+
+        @MainActor func close() {
+            window.close()
+            window.contentView = nil
+        }
     }
 
     private func settle(_ hosted: Hosted) {
@@ -189,6 +198,7 @@ final class LumenPerformanceBudgetTests: XCTestCase {
                          systemImage: "circle", keywords: ["keyword\(i % 7)"]) {}
         }
         let (hosted, _) = host(LumenCommandPalette(commands, recentsKey: nil), size: CGSize(width: 700, height: 600))
+        defer { hosted.close() }
         let ms = ["t", "tg", "tgp", "symbolicated"].reduce(0) { $0 + type(hosted, $1) }
         budget("palette, 5,000 commands, 4 keystrokes", ms, under: 4_000)
     }
@@ -213,6 +223,7 @@ final class LumenPerformanceBudgetTests: XCTestCase {
     /// 12 s for one keystroke at 100k lines before.
     func testFilteringAFiftyThousandLineLogConsole() {
         let (hosted, _) = host(LumenLogConsole(Self.logEntries(50_000), onClear: {}))
+        defer { hosted.close() }
         let ms = ["S", "St", "Study19", ""].reduce(0) { $0 + type(hosted, $1) }
         budget("log console, 50,000 lines, 4 filter edits", ms, under: 5_000)
     }
@@ -241,6 +252,7 @@ final class LumenPerformanceBudgetTests: XCTestCase {
                           value: "0x\(String(i * 4096, radix: 16)) \(Self.symbol(i))", disclosure: .collapsed)
         }
         let (hosted, first) = host(ScrollView { LumenVariableTree([LumenVariableSection("Locals", variables: variables)]) })
+        defer { hosted.close() }
         budget("variable tree, 1,000 rows, first layout", first, under: 2_000)
         budget("variable tree, 1,000 rows, scroll", scroll(hosted, to: 0.5), under: 1_000)
     }
@@ -256,6 +268,7 @@ final class LumenPerformanceBudgetTests: XCTestCase {
         let model = Model()
         let frames = (0..<1_000).map { LumenStackFrame(index: $0, function: Self.symbol($0), address: UInt64(0x1000 + $0 * 16), location: "File\($0).swift:\($0)") }
         let (hosted, first) = host(Stack(frames: frames, model: model))
+        defer { hosted.close() }
         budget("stack, 1,000 frames, first layout", first, under: 2_000)
         budget("stack, 1,000 frames, select", change(hosted) { model.selection = 3 }, under: 500)
     }
@@ -264,6 +277,7 @@ final class LumenPerformanceBudgetTests: XCTestCase {
     func testScrollingAHexDump() {
         let bytes = (0..<65_536).map { UInt8(truncatingIfNeeded: $0 &* 2_654_435_761 >> 7) }
         let (hosted, _) = host(ScrollView { LumenHexDump(bytes, baseAddress: 0x1_0000_0000, selection: .constant(nil)) })
+        defer { hosted.close() }
         let ms = scroll(hosted, to: 0.5) + scroll(hosted, to: 0.51)
         budget("hex dump, 64 KB, two scroll steps", ms, under: 1_500)
     }
@@ -276,6 +290,7 @@ final class LumenPerformanceBudgetTests: XCTestCase {
             .text("Name", monospaced: true, truncationMode: .middle) { $0.name },
             .text("Index", width: 80) { "\($0.id)" },
         ]))
+        defer { hosted.close() }
         let ms = scroll(hosted, to: 0.5) + scroll(hosted, to: 0.51) + scroll(hosted, to: 1)
         budget("table, 50,000 rows, three scroll steps", ms, under: 1_000)
     }
@@ -286,6 +301,7 @@ final class LumenPerformanceBudgetTests: XCTestCase {
             [LumenCodeRun("    let ", LumenToken.Code.keyword), LumenCodeRun("value\(i)"), LumenCodeRun(" = "), LumenCodeRun("\(i * 7)", LumenToken.Code.number)]
         }
         let (hosted, first) = host(ScrollView { LumenCodeListing(lines, currentLine: 0) })
+        defer { hosted.close() }
         budget("code listing, 1,000 lines, first layout", first, under: 1_500)
         budget("code listing, 1,000 lines, scroll", scroll(hosted, to: 0.5), under: 500)
     }
