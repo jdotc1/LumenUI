@@ -213,10 +213,10 @@ struct LumenSystemAccentDerivation {
     /// candidate that comes closest is returned.
     private func adjustedAccent(meeting requirements: [LumenContrast]) -> LumenColor {
         let ink = theme.normalized(appearance).isDark ? Self.white : Self.black
-        let grounds = requirements.flatMap { requirement in grounds(requirement.ground).map { ($0, requirement.minimum) } }
+        let pairs = requirements.flatMap { requirement in grounds(requirement.ground).map { ($0, requirement.minimum) } }
         // How far the worst requirement falls short (≤ 1 everywhere means every one is met).
         func shortfall(_ candidate: LumenColor) -> Double {
-            grounds.map { $0.1 / candidate.contrastRatio(against: $0.0, in: space) }.max() ?? 0
+            pairs.map { $0.1 / candidate.contrastRatio(against: $0.0, in: space) }.max() ?? 0
         }
         var best = (color: ink.composited(alpha: 0.8, over: accent), shortfall: Double.infinity)
         for direction in [ink, ink == Self.white ? Self.black : Self.white] {

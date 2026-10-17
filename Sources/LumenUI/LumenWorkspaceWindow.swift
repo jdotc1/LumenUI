@@ -164,6 +164,7 @@ extension View {
             .transformPreference(LumenTruncationKey.self) { if !shown { $0 = [] } }
             .transformPreference(LumenIconScaleKey.self) { if !shown { $0 = [] } }
             .transformPreference(LumenOverflowKey.self) { if !shown { $0 = [] } }
+            .transformPreference(LumenBacklightKey.self) { if !shown { $0 = [] } }
     }
 }
 

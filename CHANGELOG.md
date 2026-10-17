@@ -11,6 +11,12 @@ the people moving an app's pin:
 
 Apps pin exact commits; each release names its commit and tag.
 
+## 0.56.1 (2026-10-17)
+
+### Fixed
+- Hidden workspace regions no longer report tile backlights to conformance checks.
+- Rename the accent-derivation local to avoid name shadowing so older Swift compilers build.
+
 ## 0.56.0 (2026-10-16)
 
 ### Added

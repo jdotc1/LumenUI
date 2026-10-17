@@ -26,6 +26,32 @@ import LumenConformance
         XCTAssertEqual(LumenConformance.workspaceWindow(window: window).map(\.description), [])
     }
 
+    func testAHiddenSidebarReportsNoBacklightFindings() {
+        let findings = LumenConformance.workspaceWindow(
+            panels: LumenWorkspacePanels.allCombinations.filter { !$0.leading }
+        ) { panels in
+            LumenWorkspaceWindow(panels: .constant(panels)) {
+                Color.clear
+            } sidebar: {
+                VStack(spacing: 0) {
+                    LumenSidebarSwitcher(selection: .constant("project"), items: [
+                        LumenSidebarItem(id: "project", title: "Project", systemImage: "square.stack.3d.up", hue: .huePink),
+                        LumenSidebarItem(id: "functions", title: "Functions", systemImage: "function", hue: .hueBlue),
+                        LumenSidebarItem(id: "strings", title: "Strings", systemImage: "text.quote", hue: .hueOrange),
+                    ], shortcuts: false, style: .tiles)
+                    Color.clear
+                }
+            } inspector: {
+                Color.blue
+            } bottom: {
+                Color.green
+            } topLeading: {
+                Text("Project")
+            }
+        }
+        XCTAssertEqual(findings.filter { $0.message.contains("backlight") }.map(\.description), [])
+    }
+
     func testTheTopBarModifierIsPinnedToo() {
         let findings = LumenConformance.workspaceWindow(panels: [LumenWorkspacePanels()]) { _ in
             VStack { ForEach(0..<200) { Text("row \($0)") } }
