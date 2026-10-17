@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import XCTest
 import LumenTokens
@@ -86,8 +87,20 @@ final class LumenSurfaceScanWindowTests: XCTestCase {
             .scrollContentBackground(.hidden)
             .background(surface)
         }
-        let findings = LumenConformance.surfaceSteps(sizes: size, of: list)
+        var capture = "no capture"
+        let findings = LumenConformance.surfaceScan(sizes: size,
+            variant: .init(themeID: LumenThemes.standardID, colorScheme: .dark), registry: .core,
+            headerHeight: nil, renderer: .window, inspectCapture: { image in
+                let samples = [12, 60, 120, 200].map { y in
+                    let row = [8, 32, 64, 120].map { x in
+                        guard let color = image.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return "nil" }
+                        return "\(Int((color.redComponent * 255).rounded())),\(Int((color.greenComponent * 255).rounded())),\(Int((color.blueComponent * 255).rounded()))"
+                    }
+                    return "y=\(y): \(row)"
+                }
+                capture = "\(image.pixelsWide)×\(image.pixelsHigh); x=[8,32,64,120]; \(samples)"
+            }, of: list)
         XCTAssertTrue(findings.contains { $0.message.hasPrefix("the background steps at x = ") },
-                      "the window capture missed the tinted column: \(findings)")
+                      "the window capture missed the tinted column: \(findings); \(capture)")
     }
 }
