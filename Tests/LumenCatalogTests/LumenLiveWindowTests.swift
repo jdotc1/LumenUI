@@ -146,6 +146,20 @@ final class LumenLiveWindowTests: XCTestCase {
         let shown = min(sidebar.maxX, layout.width) - max(sidebar.minX, 0)
         XCTAssertGreaterThanOrEqual(shown, CatalogLayout.sidebarMinWidth - 0.5,
                                     "\(Int(shown)) pt of the sidebar show at the \(Int(CatalogLayout.windowMinWidth)) pt window minimum; \(geometry)")
+
+        if #available(macOS 27, *) {
+            // Exercise the older-system composition here too; a current-system pass alone cannot
+            // validate an availability-gated layout repair.
+            let fallback = layOut(CatalogView(useLegacyColumns: true).modifier(CatalogWindowMinimum()),
+                                  size: minimum, compact: false)
+            let columns = try XCTUnwrap(fallback.splits.first { $0.columns.count == 3 }, "no three-column fallback split")
+            let frames = "fallback split: \(columns.frame); columns: \(columns.columns)"
+            XCTAssertGreaterThanOrEqual(columns.frame.minX, -0.5, frames)
+            XCTAssertLessThanOrEqual(columns.frame.maxX, minimum.width + 0.5, frames)
+            XCTAssertGreaterThanOrEqual(columns.columns[0].width, CatalogLayout.sidebarMinWidth - 0.5, frames)
+            XCTAssertGreaterThanOrEqual(columns.columns[1].width, CatalogLayout.pageMinWidth - 0.5, frames)
+            XCTAssertGreaterThanOrEqual(columns.columns[2].width, LumenLayout.inspectorColumn.min - 0.5, frames)
+        }
     }
 
     // MARK: Split workspace, Nova's unified top bar (L2, L3, centre line)

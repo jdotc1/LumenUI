@@ -202,11 +202,23 @@ enum CatalogPage: String, CaseIterable, Identifiable {
 }
 
 struct CatalogView: View {
+    private let forceLegacyColumns: Bool
+
+    init(useLegacyColumns: Bool = false) {
+        forceLegacyColumns = useLegacyColumns
+    }
+
+    private var usesLegacyColumns: Bool {
+        if #available(macOS 27, *) { return forceLegacyColumns }
+        return true
+    }
+
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @State private var activity: LumenActivity = .idle()
     @State private var job: Task<Void, Never>?
     @State private var showsPalette = false
+    @State private var showsSidebar = true
     /// `LUMEN_CATALOG_INSPECTOR=0` starts with the inspector hidden.
     @State private var showsInspector = ProcessInfo.processInfo.environment["LUMEN_CATALOG_INSPECTOR"] != "0"
     /// Page colors picked in the inspector; they recolor the sidebar tiles live.
@@ -235,7 +247,6 @@ struct CatalogView: View {
         }
         .background(palette[.bgCanvas])
         .frame(minWidth: CatalogLayout.pageMinWidth)
-        .lumenPanelCommands(trailing: $showsInspector)
     }
 
     private var inspectorContent: some View {
@@ -244,32 +255,53 @@ struct CatalogView: View {
             set: { hues[page ?? .overview] = $0 }))
     }
 
+    private var sidebarContent: some View {
+        // Drawn in the theme, not the system's blue list highlight.
+        LumenSourceList(CatalogPage.allCases.map { page in
+            LumenSourceListItem(id: page.rawValue, title: page.rawValue, systemImage: page.symbol, hue: hues[page] ?? page.hue)
+        }, selection: Binding(get: { page?.rawValue }, set: { id in page = CatalogPage.allCases.first { $0.rawValue == id } }))
+    }
+
+    /// One native split gives older systems all three column minima together.
+    private var legacyColumns: some View {
+        HSplitView {
+            if showsSidebar {
+                sidebarContent
+                    .frame(minWidth: CatalogLayout.sidebarMinWidth, idealWidth: CatalogLayout.sidebarIdealWidth, maxWidth: 300)
+            }
+            pageContent
+            if showsInspector { LumenInspectorPane { inspectorContent } }
+        }
+        .lumenPanelCommands(leading: $showsSidebar, trailing: $showsInspector)
+    }
+
     @ViewBuilder
-    private var detailContent: some View {
-        if #available(macOS 27, *) {
-            pageContent.lumenInspector(isPresented: $showsInspector) { inspectorContent }
+    private var columns: some View {
+        if usesLegacyColumns {
+            legacyColumns
         } else {
-            // Native navigation plus a native inspector double-count the primary column on older
-            // systems. An explicit split keeps the page and inspector's minima independent.
-            HSplitView {
+            NavigationSplitView {
+                sidebarContent
+                    .navigationSplitViewColumnWidth(min: CatalogLayout.sidebarMinWidth, ideal: CatalogLayout.sidebarIdealWidth, max: 300)
+            } detail: {
                 pageContent
-                if showsInspector { LumenInspectorPane { inspectorContent } }
+                    .lumenPanelCommands(trailing: $showsInspector)
+                    .lumenInspector(isPresented: $showsInspector) { inspectorContent }
             }
         }
     }
 
     var body: some View {
-        NavigationSplitView {
-            // Drawn in the theme (Workbench's look), not the system's blue list highlight.
-            LumenSourceList(CatalogPage.allCases.map { page in
-                LumenSourceListItem(id: page.rawValue, title: page.rawValue, systemImage: page.symbol, hue: hues[page] ?? page.hue)
-            }, selection: Binding(get: { page?.rawValue }, set: { id in page = CatalogPage.allCases.first { $0.rawValue == id } }))
-            .navigationSplitViewColumnWidth(min: CatalogLayout.sidebarMinWidth, ideal: CatalogLayout.sidebarIdealWidth, max: 300)
-        } detail: { detailContent }
+        columns
         .navigationTitle("")
         .lumenCommandPalette(isPresented: $showsPalette, commands: paletteCommands, scopes: CatalogPalette.scopes,
                              recentsKey: "catalog.palette.recents", query: CatalogPalette.query, shortcut: nil)
         .toolbar {
+            if usesLegacyColumns {
+                ToolbarItem(placement: .navigation) {
+                    LumenPanelToggle(edge: .leading, isOn: $showsSidebar, registersShortcut: false)
+                }
+            }
             ToolbarItem(placement: .navigation) {
                 LumenToolbarIdentity("Lumen Catalog", subtitle: "~/Developer/Lumen", systemImage: "lumen.lens", hue: .hueViolet)
             }
