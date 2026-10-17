@@ -18,7 +18,6 @@ final class LumenPublicViewCoverageTests: XCTestCase {
         "LumenGlyphView",
         // coverage pending (recorded at 0.41.1)
         "LumenInlineField",
-        "LumenPanelToggle",
         "LumenRadioButton",
         "LumenSidebarActions",
         "LumenStarfield",
