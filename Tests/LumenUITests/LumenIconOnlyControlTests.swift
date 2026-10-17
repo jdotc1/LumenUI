@@ -31,6 +31,16 @@ final class LumenIconOnlyControlTests: XCTestCase {
         XCTAssertEqual(findings, [])
     }
 
+    func testAQuietButtonKeepsItsHitAreaWhenItsSymbolIsMissing() {
+        let findings = LumenConformance.iconScale(sizes: sizes) {
+            Button {} label: { Color.clear.frame(width: 0, height: 16) }
+                .buttonStyle(.lumenQuiet)
+                .lumenIconOnlyControl("Missing symbol")
+                .fixedSize()
+        }
+        XCTAssertEqual(findings, [])
+    }
+
     /// A titled button drawn icon-only is measured once it's marked: the notice dismiss button's case.
     func testAnUndersizedIconOnlyStyledButtonIsReportedWhenMarked() {
         let findings = LumenConformance.iconScale(sizes: sizes) {

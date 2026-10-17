@@ -44,7 +44,7 @@ struct LumenCatalogApp: App {
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
                 .lumenMetrics(.standard)
-                .frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
+                .modifier(CatalogWindowMinimum())
                 .onAppear {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
@@ -202,11 +202,23 @@ enum CatalogPage: String, CaseIterable, Identifiable {
 }
 
 struct CatalogView: View {
+    private let forceLegacyColumns: Bool
+
+    init(useLegacyColumns: Bool = false) {
+        forceLegacyColumns = useLegacyColumns
+    }
+
+    private var usesLegacyColumns: Bool {
+        if #available(macOS 27, *) { return forceLegacyColumns }
+        return true
+    }
+
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @State private var activity: LumenActivity = .idle()
     @State private var job: Task<Void, Never>?
     @State private var showsPalette = false
+    @State private var showsSidebar = true
     /// `LUMEN_CATALOG_INSPECTOR=0` starts with the inspector hidden.
     @State private var showsInspector = ProcessInfo.processInfo.environment["LUMEN_CATALOG_INSPECTOR"] != "0"
     /// Page colors picked in the inspector; they recolor the sidebar tiles live.
@@ -219,40 +231,77 @@ struct CatalogView: View {
         ?? .overview
     @Environment(\.lumenPalette) private var palette
 
-    var body: some View {
-        NavigationSplitView {
-            // Drawn in the theme (Workbench's look), not the system's blue list highlight.
-            LumenSourceList(CatalogPage.allCases.map { page in
-                LumenSourceListItem(id: page.rawValue, title: page.rawValue, systemImage: page.symbol, hue: hues[page] ?? page.hue)
-            }, selection: Binding(get: { page?.rawValue }, set: { id in page = CatalogPage.allCases.first { $0.rawValue == id } }))
-            .navigationSplitViewColumnWidth(min: CatalogLayout.sidebarMinWidth, ideal: CatalogLayout.sidebarIdealWidth, max: 300)
-        } detail: {
-            // `LUMEN_CATALOG_SCROLL=bottom` scrolls the page to its end (for screenshots).
-            ScrollViewReader { proxy in
-                ScrollView {
-                    CatalogPageView(page: page ?? .overview)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                    Color.clear.frame(height: 1).id("catalog.bottom")
-                }
-                .task(id: page) {
-                    guard ProcessInfo.processInfo.environment["LUMEN_CATALOG_SCROLL"] == "bottom" else { return }
-                    try? await Task.sleep(for: .milliseconds(300))
-                    proxy.scrollTo("catalog.bottom", anchor: .bottom)
-                }
+    private var pageContent: some View {
+        // `LUMEN_CATALOG_SCROLL=bottom` scrolls the page to its end (for screenshots).
+        ScrollViewReader { proxy in
+            ScrollView {
+                CatalogPageView(page: page ?? .overview)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                Color.clear.frame(height: 1).id("catalog.bottom")
             }
-            .background(palette[.bgCanvas])
-            .frame(minWidth: CatalogLayout.pageMinWidth)
-            .lumenPanelCommands(trailing: $showsInspector)
-            .lumenInspector(isPresented: $showsInspector) {
-                CatalogInspector(page: page ?? .overview, hue: Binding(
-                    get: { hues[page ?? .overview] ?? (page ?? .overview).hue },
-                    set: { hues[page ?? .overview] = $0 }))
+            .task(id: page) {
+                guard ProcessInfo.processInfo.environment["LUMEN_CATALOG_SCROLL"] == "bottom" else { return }
+                try? await Task.sleep(for: .milliseconds(300))
+                proxy.scrollTo("catalog.bottom", anchor: .bottom)
             }
         }
+        .background(palette[.bgCanvas])
+        .frame(minWidth: CatalogLayout.pageMinWidth)
+    }
+
+    private var inspectorContent: some View {
+        CatalogInspector(page: page ?? .overview, hue: Binding(
+            get: { hues[page ?? .overview] ?? (page ?? .overview).hue },
+            set: { hues[page ?? .overview] = $0 }))
+    }
+
+    private var sidebarContent: some View {
+        // Drawn in the theme, not the system's blue list highlight.
+        LumenSourceList(CatalogPage.allCases.map { page in
+            LumenSourceListItem(id: page.rawValue, title: page.rawValue, systemImage: page.symbol, hue: hues[page] ?? page.hue)
+        }, selection: Binding(get: { page?.rawValue }, set: { id in page = CatalogPage.allCases.first { $0.rawValue == id } }))
+    }
+
+    /// One native split gives older systems all three column minima together.
+    private var legacyColumns: some View {
+        HSplitView {
+            if showsSidebar {
+                sidebarContent
+                    .frame(minWidth: CatalogLayout.sidebarMinWidth, idealWidth: CatalogLayout.sidebarIdealWidth, maxWidth: 300)
+            }
+            pageContent
+            if showsInspector { LumenInspectorPane { inspectorContent } }
+        }
+        .lumenPanelCommands(leading: $showsSidebar, trailing: $showsInspector)
+    }
+
+    @ViewBuilder
+    private var columns: some View {
+        if usesLegacyColumns {
+            legacyColumns
+        } else {
+            NavigationSplitView {
+                sidebarContent
+                    .navigationSplitViewColumnWidth(min: CatalogLayout.sidebarMinWidth, ideal: CatalogLayout.sidebarIdealWidth, max: 300)
+            } detail: {
+                pageContent
+                    .lumenPanelCommands(trailing: $showsInspector)
+                    .lumenInspector(isPresented: $showsInspector) { inspectorContent }
+            }
+        }
+    }
+
+    var body: some View {
+        columns
         .navigationTitle("")
         .lumenCommandPalette(isPresented: $showsPalette, commands: paletteCommands, scopes: CatalogPalette.scopes,
                              recentsKey: "catalog.palette.recents", query: CatalogPalette.query, shortcut: nil)
         .toolbar {
+            if usesLegacyColumns {
+                ToolbarItem(placement: .navigation) {
+                    LumenPanelToggle(edge: .leading, isOn: $showsSidebar, registersShortcut: false)
+                }
+            }
             ToolbarItem(placement: .navigation) {
                 LumenToolbarIdentity("Lumen Catalog", subtitle: "~/Developer/Lumen", systemImage: "lumen.lens", hue: .hueViolet)
             }
@@ -281,6 +330,20 @@ struct CatalogView: View {
                 try? await Task.sleep(for: .milliseconds(600))
                 openSettings()
             }
+        }
+    }
+}
+
+/// Keep the window minimum outside the native columns' sizing preferences. Older systems
+/// otherwise add the leading column to this whole-window minimum a second time.
+struct CatalogWindowMinimum: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 27, *) {
+            content.frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
+        } else {
+            GeometryReader { _ in content }
+                .frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
         }
     }
 }

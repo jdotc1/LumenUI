@@ -65,7 +65,8 @@ public struct LumenQuietButtonStyle: ButtonStyle {
                 .font(metrics.typography.body)
                 .foregroundStyle(palette[(isHovered || forcedHover) && isEnabled ? .fgPrimary : .fgSecondary])
                 .padding(.horizontal, metrics.spacing.s2)
-                .frame(minHeight: max(metrics.layout.controlHeight, metrics.layout.minimumHitTarget))
+                .frame(minWidth: metrics.layout.minimumHitTarget,
+                       minHeight: max(metrics.layout.controlHeight, metrics.layout.minimumHitTarget))
                 // The hover plate every Lumen button shows (as the icon buttons beside it do), the
                 // one hover fill; pressed darkens it.
                 .background(configuration.isPressed ? palette[.bgSelected]

@@ -27,6 +27,8 @@ jobs:
         # differently, so CI runs every test but those.
         env:
           LUMEN_SKIP_GOLDENS: "1"
+          # Hosted runners are slower, shared VMs; widen every performance budget equally.
+          LUMEN_PERF_BUDGET_SCALE: "2"
         run: swift test --skip-build
       - name: API check against the last release
         run: Scripts/api-check.sh

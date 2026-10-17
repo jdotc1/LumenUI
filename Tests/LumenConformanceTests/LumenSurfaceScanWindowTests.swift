@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import XCTest
 import LumenTokens
@@ -68,23 +69,38 @@ final class LumenSurfaceScanWindowTests: XCTestCase {
         XCTAssertEqual(findings, [])
     }
 
-    /// A List (NSTableView underneath) whose rows tint a leading column: the window capture sees
-    /// it; ImageRenderer, which can't draw AppKit-backed views, doesn't.
+    /// Draw the tinted column in the row content itself: native List styles differ in how they
+    /// display listRowBackground. The scan must still capture the AppKit-backed rows.
     func testAListWithATintedLeadingColumnIsReported() {
         let surface = Color(red: 0.10, green: 0.10, blue: 0.21)
         let gutter = Color(red: 0.14, green: 0.13, blue: 0.27)
         let list = {
             List(0..<12, id: \.self) { row in
                 Text("Row \(row)")
-                    .listRowBackground(HStack(spacing: 0) { gutter.frame(width: 48); surface })
+                    .padding(.leading, 60)
+                    .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+                    .background(HStack(spacing: 0) { gutter.frame(width: 48); surface })
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
             }
+            .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(surface)
         }
-        let findings = LumenConformance.surfaceSteps(sizes: size, of: list)
-        XCTAssertFalse(findings.isEmpty, "the window capture missed the tinted column")
-        let imageRendered = LumenConformance.surfaceScan(sizes: size, variant: .init(themeID: LumenThemes.standardID, colorScheme: .dark),
-                                                         registry: .core, headerHeight: nil, renderer: .imageRenderer, of: list)
-        XCTAssertEqual(imageRendered, [], "ImageRenderer drew the List after all; the window capture isn't needed for it")
+        var capture = "no capture"
+        let findings = LumenConformance.surfaceScan(sizes: size,
+            variant: .init(themeID: LumenThemes.standardID, colorScheme: .dark), registry: .core,
+            headerHeight: nil, renderer: .window, inspectCapture: { image in
+                let samples = [12, 60, 120, 200].map { y in
+                    let row = [8, 32, 64, 120].map { x in
+                        guard let color = image.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return "nil" }
+                        return "\(Int((color.redComponent * 255).rounded())),\(Int((color.greenComponent * 255).rounded())),\(Int((color.blueComponent * 255).rounded()))"
+                    }
+                    return "y=\(y): \(row)"
+                }
+                capture = "\(image.pixelsWide)×\(image.pixelsHigh); x=[8,32,64,120]; \(samples)"
+            }, of: list)
+        XCTAssertTrue(findings.contains { $0.message.hasPrefix("the background steps at x = ") },
+                      "the window capture missed the tinted column: \(findings); \(capture)")
     }
 }

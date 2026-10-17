@@ -634,7 +634,8 @@ public struct LumenHexDump: View {
 
     /// The width a row of `perRow` bytes takes: every part of it has a fixed width.
     func rowWidth(perRow: Int) -> CGFloat {
-        metrics.spacing.s2 * 2 + CGFloat(addressDigits) * charWidth + charWidth * 2
+        let charWidth = self.charWidth
+        return metrics.spacing.s2 * 2 + CGFloat(addressDigits) * charWidth + charWidth * 2
             + CGFloat(perRow) * charWidth * 3 + (perRow == 16 ? charWidth : 0)
             + metrics.stroke.hairline + charWidth * 2 + CGFloat(min(perRow, bytes.count)) * charWidth
     }
@@ -670,18 +671,28 @@ public struct LumenHexDump: View {
     }
 
     private func rows(perRow: Int, style: LumenHexStyle) -> some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        // Every cell uses the same font. Measure its digit advance once for this row collection.
+        let charWidth = self.charWidth
+        return LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(stride(from: 0, to: bytes.count, by: perRow)), id: \.self) { start in
-                row(start: start, count: min(perRow, bytes.count - start), perRow: perRow, style: style)
+                row(start: start, count: min(perRow, bytes.count - start), perRow: perRow, charWidth: charWidth, style: style)
             }
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func row(start: Int, count: Int, perRow: Int, style: LumenHexStyle) -> some View {
+    private func row(start: Int, count: Int, perRow: Int, charWidth: CGFloat, style: LumenHexStyle) -> some View {
         let rowSelected = selection.map { $0.overlaps(start..<(start + count)) } ?? false
         let address = String(baseAddress &+ UInt64(start), radix: 16)
-        return HStack(spacing: 0) {
+        let rowHeight = ceil(size * 1.6)
+        var widths = [CGFloat(addressDigits) * charWidth + charWidth * 2]
+        for index in 0..<perRow {
+            widths.append(charWidth * 3)
+            if perRow == 16, index == 7 { widths.append(charWidth) }
+        }
+        widths.append(metrics.stroke.hairline + charWidth * 2)
+        widths.append(contentsOf: repeatElement(charWidth, count: count))
+        return LumenHexRowLayout(widths: widths, height: rowHeight) {
             Text(String(repeating: "0", count: max(0, addressDigits - address.count)) + address)
                 .foregroundStyle(style.offset)
                 .frame(width: CGFloat(addressDigits) * charWidth, alignment: .leading)
@@ -689,7 +700,7 @@ public struct LumenHexDump: View {
             ForEach(start..<(start + perRow), id: \.self) { index in
                 if index < start + count {
                     cell(index, text: String(format: "%02x", bytes[index]), ink: style.color(forByte: bytes[index]),
-                         width: charWidth * 3, style: style)
+                         width: charWidth * 3, height: rowHeight, style: style)
                 } else {
                     Color.clear.frame(width: charWidth * 3)
                 }
@@ -700,11 +711,11 @@ public struct LumenHexDump: View {
             ForEach(start..<(start + count), id: \.self) { index in
                 let value = bytes[index]
                 cell(index, text: LumenHexStyle.isPrintable(value) ? String(UnicodeScalar(value)) : ".",
-                     ink: style.asciiColor(forByte: value), width: charWidth, style: style)
+                     ink: style.asciiColor(forByte: value), width: charWidth, height: rowHeight, style: style)
             }
         }
         .font(font)
-        .frame(height: ceil(size * 1.6))
+        .frame(height: rowHeight)
         .padding(.horizontal, metrics.spacing.s2)
         .background(rowSelected ? style.selectedRowBackground : .clear)
         // One tap target a row, mapped to the byte under the pointer (PERF-05: one per cell was 32 a row).
@@ -717,17 +728,17 @@ public struct LumenHexDump: View {
             + bytes[start..<(start + count)].map { String(format: "%02x", $0) }.joined(separator: " "))
     }
 
-    private func cell(_ index: Int, text: String, ink: Color, width: CGFloat, style: LumenHexStyle) -> some View {
+    private func cell(_ index: Int, text: String, ink: Color, width: CGFloat, height: CGFloat, style: LumenHexStyle) -> some View {
         let selected = selection?.contains(index) ?? false
         return Text(text)
             .foregroundStyle(selected ? style.selectionForeground : ink)
-            .frame(width: width)
-            .frame(maxHeight: .infinity)
+            .frame(width: width, height: height)
             .background(selected ? style.selectionBackground : .clear)
     }
 
     /// The byte under `x` in a row's coordinates (hex or ASCII cell), or `nil` between cells.
     func byteIndex(at x: CGFloat, start: Int, count: Int, perRow: Int) -> Int? {
+        let charWidth = self.charWidth
         let hexStart = metrics.spacing.s2 + CGFloat(addressDigits) * charWidth + charWidth * 2
         let gap = perRow == 16 ? charWidth : 0
         let hexEnd = hexStart + CGFloat(perRow) * charWidth * 3 + gap
@@ -753,6 +764,26 @@ public struct LumenHexDump: View {
             selection = min(current.lowerBound, index)..<(max(current.upperBound - 1, index) + 1)
         } else {
             selection = index..<(index + 1)
+        }
+    }
+}
+
+/// Hex cells have measured, fixed advances. Placing them directly avoids asking a horizontal
+/// stack to resolve every text cell's flexible minimum and maximum widths during scrolling.
+private struct LumenHexRowLayout: Layout {
+    let widths: [CGFloat]
+    let height: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        CGSize(width: widths.reduce(0, +), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        for (subview, width) in zip(subviews, widths) {
+            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(width: width, height: height))
+            x += width
         }
     }
 }

@@ -412,7 +412,7 @@ public enum LumenConformance {
 
     @MainActor
     static func surfaceScan<Content: View>(sizes: [CGSize], variant: LumenSnapshot.Variant, registry: LumenRegistry, headerHeight: CGFloat?,
-                                           renderer: SurfaceRenderer, of pane: () -> Content) -> [Finding] {
+                                           renderer: SurfaceRenderer, inspectCapture: ((NSBitmapImageRep) -> Void)? = nil, of pane: () -> Content) -> [Finding] {
         sizes.flatMap { size -> [Finding] in
             let subject = "\(Int(size.width))×\(Int(size.height))"
             var (image, unknown) = renderer == .window ? renderInWindow(pane(), size: size, variant: variant, registry: registry) : (nil, [])
@@ -428,6 +428,7 @@ public enum LumenConformance {
                 Finding(.layout, subject, "token “\($0)” isn't in the registry; pass the app's registry")
             }
             guard let image else { return unknownFindings + [Finding(.layout, subject, "pane didn't render")] }
+            inspectCapture?(image)
             let scan = SurfaceScan(image)
             var findings = unknownFindings + scan.steps().map { Finding(.layout, subject, $0) }
             if let headerHeight, let difference = scan.headerDifference(height: Int(headerHeight.rounded())),
@@ -438,52 +439,15 @@ public enum LumenConformance {
         }
     }
 
-    /// Draws `pane` as `LumenSnapshot` would (the variant's theme active, its palette, metrics and
-    /// appearance), but in a real offscreen window, captured with `cacheDisplay`, at 1 pixel per
-    /// point. `nil` when the capture drew nothing.
+    /// Use the snapshot renderer's bounded layout/display settling for native row content, at
+    /// one pixel per point. A single cacheDisplay after layout can capture only the pane background.
     @MainActor
     private static func renderInWindow<Content: View>(_ pane: Content, size: CGSize, variant: LumenSnapshot.Variant,
                                                       registry: LumenRegistry) -> (NSBitmapImageRep?, Set<LumenToken>) {
-        let store = LumenSnapshot.store(for: variant, registry: registry)
-        let image = LumenThemeStore.withActiveStore(store) { () -> NSBitmapImageRep? in
-            let palette = store.resolvedPalette()
-            let content = pane
-                .frame(width: size.width, height: size.height)
-                .background(palette[.bgCanvas])
-                .ignoresSafeArea()
-                .environment(\.colorScheme, variant.colorScheme)
-                .environment(\.lumenPalette, palette)
-                .environment(\.lumenStore, store)
-                .environment(\.lumenMetrics, .standard)
-                .tint(palette[.accent])
-            let appearance = NSAppearance(named: variant.colorScheme == .dark ? .darkAqua : .aqua)
-            let (window, host) = offscreenWindow(AnyView(content), size: size, appearance: appearance)
-            defer { window.close() }
-            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
-            host.cacheDisplay(in: host.bounds, to: rep)
-            return onePixelPerPoint(rep, size: size)
-        }
-        guard let image, !isBlank(image) else { return (nil, store.unknownTokens) }
-        return (image, store.unknownTokens)
-    }
-
-    /// The capture redrawn at 1 pixel per point (a Retina window captures at 2), so the scan's x
-    /// positions are points.
-    private static func onePixelPerPoint(_ rep: NSBitmapImageRep, size: CGSize) -> NSBitmapImageRep? {
-        let width = Int(size.width.rounded()), height = Int(size.height.rounded())
-        guard width > 0, height > 0 else { return nil }
-        if rep.pixelsWide == width, rep.pixelsHigh == height { return rep }
-        guard let out = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
-                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                                         bytesPerRow: 0, bitsPerPixel: 0),
-              let context = NSGraphicsContext(bitmapImageRep: out) else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = context
-        context.imageInterpolation = .none
-        rep.draw(in: CGRect(x: 0, y: 0, width: width, height: height), from: .zero, operation: .copy, fraction: 1,
-                 respectFlipped: true, hints: [.interpolation: NSImageInterpolation.none.rawValue])
-        NSGraphicsContext.restoreGraphicsState()
-        return out
+        let (data, unknown) = LumenSnapshot.render(pane, size: size, variant: variant, registry: registry,
+                                                  scale: 1, renderer: .window)
+        guard let image = data.flatMap(NSBitmapImageRep.init(data:)), !isBlank(image) else { return (nil, unknown) }
+        return (image, unknown)
     }
 
     /// True when every sampled pixel is fully transparent: the capture drew nothing.
@@ -564,7 +528,7 @@ public enum LumenConformance {
     }
 
     /// Hosts `content` in a real (offscreen) window of `size` and lays it out; close the window when
-    /// done. The one window the layout checks and the surface scan share.
+    /// done. Used for geometry checks; pixel scans use the settled snapshot renderer.
     @MainActor
     private static func offscreenWindow(_ content: AnyView, size: CGSize, appearance: NSAppearance? = nil) -> (NSWindow, NSHostingView<AnyView>) {
         let host = NSHostingView(rootView: content)

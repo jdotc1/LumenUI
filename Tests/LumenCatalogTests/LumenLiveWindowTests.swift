@@ -30,6 +30,8 @@ final class LumenLiveWindowTests: XCTestCase {
         /// coordinates (x from the window's leading edge).
         var splits: [(frame: CGRect, columns: [CGRect])] = []
         var width: CGFloat = 0
+        var hostFrame: CGRect = .zero
+        var contentBounds: CGRect = .zero
         /// The window's content minimum, which AppKit takes from the hosted view when `sizing`
         /// includes `.minSize` (toolbar band included).
         var contentMinSize: CGSize = .zero
@@ -98,6 +100,8 @@ final class LumenLiveWindowTests: XCTestCase {
             }
             collect(frameView)
             layout.width = size.width
+            layout.hostFrame = host.frame
+            layout.contentBounds = window.contentView?.bounds ?? .zero
             layout.bar = box.bar
             layout.regionTop = box.top
             layout.contentMinSize = window.contentMinSize
@@ -112,7 +116,7 @@ final class LumenLiveWindowTests: XCTestCase {
     func catalog() -> some View {
         setenv("LUMEN_CATALOG_PAGE", "overview", 1)
         setenv("LUMEN_CATALOG_INSPECTOR", "1", 1)
-        return CatalogView().frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
+        return CatalogView().modifier(CatalogWindowMinimum())
     }
 
     /// At the window's minimum width NavigationSplitView gave the inspector 240 (not its 220
@@ -125,16 +129,37 @@ final class LumenLiveWindowTests: XCTestCase {
         XCTAssertEqual(minimum.width, CatalogLayout.windowMinWidth, accuracy: 0.5, "the Catalog window's minimum width")
         XCTAssertGreaterThan(minimum.height, 640, "the toolbar band adds to the content's 640 pt minimum height")
         let layout = layOut(catalog(), size: minimum, compact: false)
-        let split = try XCTUnwrap(layout.splits.first(where: { $0.columns.count >= 2 }), "no split view")
+        // Identify the sidebar by its leading column, independent of native split nesting.
+        let split = try XCTUnwrap(layout.splits.filter { $0.columns.count >= 2 }
+            .min { $0.columns[0].width < $1.columns[0].width }, "no split view")
+        let geometry = "minimum: \(minimum); host: \(layout.hostFrame); content: \(layout.contentBounds); " + layout.splits.enumerated().map { index, split in
+            "split \(index): \(split.frame); columns: \(split.columns)"
+        }.joined(separator: "; ")
         // Measured on base: the split view is 970 pt wide in the 890 pt window (the inspector takes
         // its 280 ideal, not its 220 minimum), centered at x −40, so 40 pt of the 210 pt sidebar are
         // off the window's leading edge and 170 show.
-        XCTAssertGreaterThanOrEqual(split.frame.minX, -0.5, "the split view starts \(Int(-split.frame.minX)) pt off the window's leading edge")
-        XCTAssertLessThanOrEqual(split.frame.maxX, layout.width + 0.5, "the split view runs \(Int(split.frame.maxX - layout.width)) pt past the window's trailing edge")
+        for measured in layout.splits {
+            XCTAssertGreaterThanOrEqual(measured.frame.minX, -0.5, "the split view starts \(Int(-measured.frame.minX)) pt off the window's leading edge; \(geometry)")
+            XCTAssertLessThanOrEqual(measured.frame.maxX, layout.width + 0.5, "the split view runs \(Int(measured.frame.maxX - layout.width)) pt past the window's trailing edge; \(geometry)")
+        }
         let sidebar = split.columns[0]
         let shown = min(sidebar.maxX, layout.width) - max(sidebar.minX, 0)
         XCTAssertGreaterThanOrEqual(shown, CatalogLayout.sidebarMinWidth - 0.5,
-                                    "\(Int(shown)) pt of the sidebar show at the \(Int(CatalogLayout.windowMinWidth)) pt window minimum")
+                                    "\(Int(shown)) pt of the sidebar show at the \(Int(CatalogLayout.windowMinWidth)) pt window minimum; \(geometry)")
+
+        if #available(macOS 27, *) {
+            // Exercise the older-system composition here too; a current-system pass alone cannot
+            // validate an availability-gated layout repair.
+            let fallback = layOut(CatalogView(useLegacyColumns: true).modifier(CatalogWindowMinimum()),
+                                  size: minimum, compact: false)
+            let columns = try XCTUnwrap(fallback.splits.first { $0.columns.count == 3 }, "no three-column fallback split")
+            let frames = "fallback split: \(columns.frame); columns: \(columns.columns)"
+            XCTAssertGreaterThanOrEqual(columns.frame.minX, -0.5, frames)
+            XCTAssertLessThanOrEqual(columns.frame.maxX, minimum.width + 0.5, frames)
+            XCTAssertGreaterThanOrEqual(columns.columns[0].width, CatalogLayout.sidebarMinWidth - 0.5, frames)
+            XCTAssertGreaterThanOrEqual(columns.columns[1].width, CatalogLayout.pageMinWidth - 0.5, frames)
+            XCTAssertGreaterThanOrEqual(columns.columns[2].width, LumenLayout.inspectorColumn.min - 0.5, frames)
+        }
     }
 
     // MARK: Split workspace, Nova's unified top bar (L2, L3, centre line)
