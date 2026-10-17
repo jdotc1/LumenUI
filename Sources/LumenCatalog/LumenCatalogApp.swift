@@ -242,6 +242,7 @@ struct CatalogView: View {
             }
             .background(palette[.bgCanvas])
             .frame(minWidth: CatalogLayout.pageMinWidth)
+            .modifier(CatalogDetailColumnWidth())
             .lumenPanelCommands(trailing: $showsInspector)
             .lumenInspector(isPresented: $showsInspector) {
                 CatalogInspector(page: page ?? .overview, hue: Binding(
@@ -281,6 +282,18 @@ struct CatalogView: View {
                 try? await Task.sleep(for: .milliseconds(600))
                 openSettings()
             }
+        }
+    }
+}
+
+/// Keep the page's native column preference separate from the inspector's width on older systems.
+private struct CatalogDetailColumnWidth: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 27, *) {
+            content
+        } else {
+            content.navigationSplitViewColumnWidth(min: CatalogLayout.pageMinWidth, ideal: CatalogLayout.pageMinWidth)
         }
     }
 }

@@ -126,15 +126,18 @@ final class LumenLiveWindowTests: XCTestCase {
         XCTAssertGreaterThan(minimum.height, 640, "the toolbar band adds to the content's 640 pt minimum height")
         let layout = layOut(catalog(), size: minimum, compact: false)
         let split = try XCTUnwrap(layout.splits.first(where: { $0.columns.count >= 2 }), "no split view")
+        let geometry = layout.splits.enumerated().map { index, split in
+            "split \(index): \(split.frame); columns: \(split.columns)"
+        }.joined(separator: "; ")
         // Measured on base: the split view is 970 pt wide in the 890 pt window (the inspector takes
         // its 280 ideal, not its 220 minimum), centered at x −40, so 40 pt of the 210 pt sidebar are
         // off the window's leading edge and 170 show.
-        XCTAssertGreaterThanOrEqual(split.frame.minX, -0.5, "the split view starts \(Int(-split.frame.minX)) pt off the window's leading edge")
-        XCTAssertLessThanOrEqual(split.frame.maxX, layout.width + 0.5, "the split view runs \(Int(split.frame.maxX - layout.width)) pt past the window's trailing edge")
+        XCTAssertGreaterThanOrEqual(split.frame.minX, -0.5, "the split view starts \(Int(-split.frame.minX)) pt off the window's leading edge; \(geometry)")
+        XCTAssertLessThanOrEqual(split.frame.maxX, layout.width + 0.5, "the split view runs \(Int(split.frame.maxX - layout.width)) pt past the window's trailing edge; \(geometry)")
         let sidebar = split.columns[0]
         let shown = min(sidebar.maxX, layout.width) - max(sidebar.minX, 0)
         XCTAssertGreaterThanOrEqual(shown, CatalogLayout.sidebarMinWidth - 0.5,
-                                    "\(Int(shown)) pt of the sidebar show at the \(Int(CatalogLayout.windowMinWidth)) pt window minimum")
+                                    "\(Int(shown)) pt of the sidebar show at the \(Int(CatalogLayout.windowMinWidth)) pt window minimum; \(geometry)")
     }
 
     // MARK: Split workspace, Nova's unified top bar (L2, L3, centre line)
