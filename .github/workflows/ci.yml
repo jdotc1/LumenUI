@@ -1,0 +1,32 @@
+name: CI
+
+# GitHub-hosted runners only: consumer apps's self-hosted runner is never used for Lumen.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags, for the API check
+      - name: Toolchain
+        run: swift --version
+      - name: Build (warnings are errors)
+        run: swift build --build-tests -Xswiftc -warnings-as-errors
+      - name: Test
+        # Golden images are recorded on the maintainer's macOS and fonts; another OS renders text
+        # differently, so CI runs every test but those.
+        env:
+          LUMEN_SKIP_GOLDENS: "1"
+        run: swift test --skip-build
+      - name: API check against the last release
+        run: Scripts/api-check.sh

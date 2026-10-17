@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+*.xcodeproj/
+DerivedData/
+.DS_Store
+.claude-snapshots/
+.claude/
+Design/symbols/seeds/
