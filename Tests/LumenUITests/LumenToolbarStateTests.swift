@@ -30,24 +30,33 @@ final class LumenToolbarStateTests: XCTestCase {
         return best
     }
 
-    private var pieces: some View {
-        VStack(spacing: 8) {
-            LumenToolbarIdentity("Lumen", subtitle: "~/Developer/Lumen", systemImage: "lumen.lens", hue: .hueViolet)
-            LumenTaskCluster([
+    private var pieces: [(name: String, view: AnyView)] {
+        [
+            ("Identity", AnyView(LumenToolbarIdentity("Lumen", subtitle: "Workspace", systemImage: "lumen.lens", hue: .hueViolet))),
+            ("Tasks", AnyView(LumenTaskCluster([
                 LumenTaskAction("Build", systemImage: "hammer.fill") {},
                 LumenTaskAction("Run", systemImage: "play.fill", role: .start) {},
                 LumenTaskAction("Stop", systemImage: "stop.fill", role: .stop) {},
-            ], activity: .idle())
-            LumenActivityStatus(.working("Indexing", progress: 0.5), width: 200)
-            LumenActivityStatus(.failed("Backend unavailable"), width: 200)
-        }
+            ], activity: .idle()))),
+            ("Working status", AnyView(LumenActivityStatus(.working("Indexing", progress: 0.5), width: 200))),
+            ("Failed status", AnyView(LumenActivityStatus(.failed("Backend unavailable"), width: 200))),
+        ]
     }
 
     func testLumensToolbarPiecesGreyOutTogetherInAnInactiveWindow() throws {
-        XCTAssertGreaterThan(try maxChroma(pieces.environment(\.controlActiveState, .key)), 60,
+        // Calibrate SwiftUI's renderer independently of Lumen's dimming modifier. A failure in
+        // a Lumen piece must never be used as the reason to skip its own assertion.
+        let reference = Color(.sRGB, red: 1, green: 0, blue: 0).frame(width: 12, height: 12)
+        XCTAssertGreaterThan(try maxChroma(reference), 60, "the reference swatch must render in color")
+        try XCTSkipIf(try maxChroma(reference.saturation(0)) >= 6,
+                      "ImageRenderer does not desaturate an independent SwiftUI reference swatch in this process")
+        let activeChroma = try pieces.map { try maxChroma($0.view.environment(\.controlActiveState, .key)) }
+        XCTAssertGreaterThan(activeChroma.max() ?? 0, 60,
                              "Active, build, run, the identity tile and the status keep their color")
-        XCTAssertLessThan(try maxChroma(pieces.environment(\.controlActiveState, .inactive)), 6,
-                          "Inactive, the identity, task cluster and status go grey like the panel toggles")
+        for piece in pieces {
+            XCTAssertLessThan(try maxChroma(piece.view.environment(\.controlActiveState, .inactive)), 6,
+                              "Inactive, \(piece.name) must go grey like the panel toggles")
+        }
     }
 
     func testNestedToolbarDimmingAppliesOnce() throws {
