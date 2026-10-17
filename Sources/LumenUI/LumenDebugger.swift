@@ -634,7 +634,8 @@ public struct LumenHexDump: View {
 
     /// The width a row of `perRow` bytes takes: every part of it has a fixed width.
     func rowWidth(perRow: Int) -> CGFloat {
-        metrics.spacing.s2 * 2 + CGFloat(addressDigits) * charWidth + charWidth * 2
+        let charWidth = self.charWidth
+        return metrics.spacing.s2 * 2 + CGFloat(addressDigits) * charWidth + charWidth * 2
             + CGFloat(perRow) * charWidth * 3 + (perRow == 16 ? charWidth : 0)
             + metrics.stroke.hairline + charWidth * 2 + CGFloat(min(perRow, bytes.count)) * charWidth
     }
@@ -670,15 +671,17 @@ public struct LumenHexDump: View {
     }
 
     private func rows(perRow: Int, style: LumenHexStyle) -> some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        // Every cell uses the same font. Measure its digit advance once for this row collection.
+        let charWidth = self.charWidth
+        return LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(stride(from: 0, to: bytes.count, by: perRow)), id: \.self) { start in
-                row(start: start, count: min(perRow, bytes.count - start), perRow: perRow, style: style)
+                row(start: start, count: min(perRow, bytes.count - start), perRow: perRow, charWidth: charWidth, style: style)
             }
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func row(start: Int, count: Int, perRow: Int, style: LumenHexStyle) -> some View {
+    private func row(start: Int, count: Int, perRow: Int, charWidth: CGFloat, style: LumenHexStyle) -> some View {
         let rowSelected = selection.map { $0.overlaps(start..<(start + count)) } ?? false
         let address = String(baseAddress &+ UInt64(start), radix: 16)
         return HStack(spacing: 0) {
@@ -728,6 +731,7 @@ public struct LumenHexDump: View {
 
     /// The byte under `x` in a row's coordinates (hex or ASCII cell), or `nil` between cells.
     func byteIndex(at x: CGFloat, start: Int, count: Int, perRow: Int) -> Int? {
+        let charWidth = self.charWidth
         let hexStart = metrics.spacing.s2 + CGFloat(addressDigits) * charWidth + charWidth * 2
         let gap = perRow == 16 ? charWidth : 0
         let hexEnd = hexStart + CGFloat(perRow) * charWidth * 3 + gap
