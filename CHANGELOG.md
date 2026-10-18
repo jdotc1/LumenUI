@@ -11,6 +11,18 @@ the people moving an app's pin:
 
 Apps pin exact commits; each release names its commit and tag.
 
+## 0.56.2 (2026-10-18)
+
+### Visual
+- On macOS before 27, the Catalog puts sidebar, list and detail in one native split, so the sidebar
+  keeps its minimum at the 972 pt window minimum. macOS 27 is unchanged.
+- Quiet buttons have a 24 pt minimum hit width, so a missing symbol no longer shrinks one to 8 pt.
+
+### Fixed
+- Hex dump measures the digit width once and places cells at fixed widths; scrolling is faster.
+- Tests: settled window captures, OS-gated custom-symbol and toolbar-desaturation checks, and
+  `LUMEN_PERF_BUDGET_SCALE` for hosted CI runners (default 1, so local budgets are unchanged).
+
 ## 0.56.1 (2026-10-17)
 
 ### Fixed
