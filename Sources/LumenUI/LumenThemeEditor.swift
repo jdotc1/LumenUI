@@ -16,9 +16,10 @@ public struct LumenThemeEditor: View {
     @Environment(\.lumenPalette) private var palette
     @Environment(\.lumenMetrics) private var metrics
 
-    @State private var name: String
+    @State private var session: LumenThemeEditorSession
+    @State private var selectedTab = "Colors"
+    @State private var editingHighContrast = false
     @State private var editingDark: Bool
-    @State private var overrides: [Bool: [LumenToken: LumenColor]] = [:]
     @State private var saveError: String?
     @State private var filter = ""
     @State private var changedOnly = false
@@ -31,7 +32,7 @@ public struct LumenThemeEditor: View {
         self.base = base
         self.store = store
         self.editsInPlace = editsInPlace && store.userThemeFile(for: base.id) != nil
-        _name = State(initialValue: self.editsInPlace ? base.name : "\(base.name) Custom")
+        _session = State(initialValue: LumenThemeEditorSession(base: base, store: store, editsInPlace: self.editsInPlace))
         let systemIsDark = NSApp?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         _editingDark = State(initialValue: base.forcedAppearanceIsDark ?? systemIsDark)
     }
@@ -45,10 +46,10 @@ public struct LumenThemeEditor: View {
 
     /// The theme being edited: the base plus the overrides, as a flattened theme.
     var draft: LumenTheme {
-        LumenThemeLibrary.editorPreview(name: name, inheriting: base, overrides: overrides)
+        session.draft
     }
 
-    private var appearance: LumenAppearance { LumenAppearance(isDark: editingDark) }
+    private var appearance: LumenAppearance { LumenAppearance(isDark: editingDark, isHighContrast: editingHighContrast) }
 
     /// The registry's groups after the filter field and "Changed only": a case-insensitive match
     /// on the token name or its group title. Empty groups are dropped; order is kept.
@@ -90,25 +91,36 @@ public struct LumenThemeEditor: View {
             header
             Divider()
             HStack(alignment: .top, spacing: 0) {
-                tokenList(draft: draft, issues: issues)
-                    .frame(minWidth: 340)
+                VStack(spacing: 0) {
+                    LumenModeSwitcher(selection: $selectedTab, options: ["Colors", "Metrics"], style: .pill, title: { $0 })
+                        .lumenModeSwitcherPlacement(.content)
+                        .padding(metrics.spacing.s5)
+                    if selectedTab == "Metrics" {
+                        LumenThemeMetricControls(session: session)
+                    } else {
+                        tokenList(draft: draft, issues: issues)
+                    }
+                }
+                .frame(minWidth: 360)
                 Divider()
                 VStack(alignment: .leading, spacing: metrics.spacing.s6) {
                     LumenThemeMiniature(theme: draft, registry: registry, appearance: appearance)
                         .clipShape(.rect(cornerRadius: metrics.radius.md))
                         .overlay { RoundedRectangle(cornerRadius: metrics.radius.md).strokeBorder(palette[.borderSubtle]) }
-                    validation(issues)
+                    ScrollView { validation(issues).lumenColumnContent("theme editor findings") }
                     Spacer(minLength: 0)
                 }
                 .padding(metrics.spacing.s6)
-                .frame(width: 300)
+                .frame(width: 320)
             }
             Divider()
             footer(issues)
         }
-        .frame(minWidth: 680, minHeight: 520)
+        .frame(minWidth: 720, minHeight: 560)
         .accessibilityIdentifier("lumen.theme.editor-sheet")
-        .task(id: overrides) {
+        .onAppear { session.beginPreview() }
+        .onDisappear { session.endPreview() }
+        .task(id: session.revision) {
             if validated != nil {
                 try? await Task.sleep(for: Self.validationDelay)
                 guard !Task.isCancelled else { return }
@@ -118,27 +130,36 @@ public struct LumenThemeEditor: View {
     }
 
     private var header: some View {
-        HStack(spacing: metrics.spacing.s5) {
-            TextField("Theme name", text: $name)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 260)
-                .disabled(editsInPlace)
-            Text(editsInPlace ? "Editing \(base.name)" : "Based on \(base.name)")
-                .font(metrics.typography.caption)
-                .foregroundStyle(palette[.fgTertiary])
-            Spacer()
-            if base.forcedAppearanceIsDark == nil {
-                LumenModeSwitcher(selection: $editingDark, options: [false, true], style: .pill,
-                                  title: { $0 ? "Dark" : "Light" })
-                    .lumenModeSwitcherPlacement(.content)
-                    .accessibilityLabel("Appearance")
+        VStack(alignment: .leading, spacing: metrics.spacing.s3) {
+            HStack(spacing: metrics.spacing.s5) {
+                TextField("Theme name", text: Binding(get: { session.name }, set: { session.name = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 260)
+                    .disabled(editsInPlace)
+                Text(editsInPlace ? "Editing \(base.name)" : "Based on \(base.name)")
+                    .font(metrics.typography.caption)
+                    .foregroundStyle(palette[.fgTertiary])
+                    .lumenWrapsWithoutTruncating()
+                Spacer()
+            }
+            HStack(spacing: metrics.spacing.s5) {
+                Text("Appearance").font(metrics.typography.caption).foregroundStyle(palette[.fgSecondary])
+                if base.forcedAppearanceIsDark == nil {
+                    LumenModeSwitcher(selection: $editingDark, options: [false, true], style: .pill,
+                                      title: { $0 ? "Dark" : "Light" })
+                        .lumenModeSwitcherPlacement(.content)
+                        .accessibilityLabel("Appearance")
+                }
+                Toggle("Increase Contrast", isOn: $editingHighContrast)
+                    .toggleStyle(.lumenCheckbox)
+                Spacer()
             }
         }
         .padding(metrics.spacing.s5)
     }
 
     private func tokenList(draft: LumenTheme, issues: [LumenIssue]) -> some View {
-        let changed: Set<LumenToken>? = changedOnly ? Set(overrides[editingDark]?.keys.map { $0 } ?? []) : nil
+        let changed: Set<LumenToken>? = changedOnly ? Set(session.overrides[appearance]?.keys.map { $0 } ?? []) : nil
         let shown = Self.groups(in: registry, matching: filter, within: changed)
         return VStack(spacing: 0) {
             HStack(spacing: metrics.spacing.s4) {
@@ -174,14 +195,14 @@ public struct LumenThemeEditor: View {
     }
 
     private func row(for token: LumenToken, draft: LumenTheme, issues: [LumenIssue]) -> some View {
-        let isOverridden = overrides[editingDark]?[token] != nil
+        let isOverridden = session.overrides[appearance]?[token] != nil
         let binding = Binding<Color>(
             get: { Color(nsColor: draft.nsColor(token, for: appearance, in: registry)) },
             set: { newValue in
                 // Store components in the theme's own color space: a Display P3 theme reads its hex
                 // values as P3, so sRGB components would shift every picked color.
                 guard let picked = LumenColor(NSColor(newValue), in: draft.colorSpace) else { return }
-                overrides[editingDark, default: [:]][token] = picked
+                session.setColor(picked, for: token, appearance: appearance)
             }
         )
         // This appearance's issues for the token, Increase Contrast's included.
@@ -196,7 +217,7 @@ public struct LumenThemeEditor: View {
                 .foregroundStyle(palette[isOverridden ? .fgPrimary : .fgTertiary])
             if isOverridden {
                 Button("Revert \(token.rawValue)", systemImage: "arrow.uturn.backward") {
-                    overrides[editingDark]?[token] = nil
+                    session.resetColor(token, appearance: appearance)
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.lumenPanelIcon)
@@ -224,26 +245,38 @@ public struct LumenThemeEditor: View {
                     .foregroundStyle(palette[.statusSuccess])
                     .font(metrics.typography.callout)
             } else {
-                ForEach(current.prefix(6)) { issue in
-                    Button {
-                        // Show the color the issue names, so it can be fixed right away.
-                        if let token = issue.token {
-                            filter = token.rawValue
-                            changedOnly = false
-                            if base.forcedAppearanceIsDark == nil { editingDark = issue.appearance.isDark }
+                ForEach(current) { issue in
+                    HStack(alignment: .top, spacing: metrics.spacing.s3) {
+                        Button {
+                            // Show the color the issue names, so it can be fixed right away.
+                            if let token = issue.token {
+                                selectedTab = "Colors"
+                                editingHighContrast = issue.appearance.isHighContrast
+                                filter = token.rawValue
+                                changedOnly = false
+                                if base.forcedAppearanceIsDark == nil { editingDark = issue.appearance.isDark }
+                            } else { selectedTab = "Metrics" }
+                        } label: {
+                            Label(issue.appearance == appearance ? issue.message : "\(issue.appearance): \(issue.message)", systemImage: issue.severity == .error ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                                .foregroundStyle(palette[issue.severity == .error ? .statusDanger : .statusWarning])
+                                .font(metrics.typography.caption)
+                                .multilineTextAlignment(.leading)
+                                .lumenWrapsWithoutTruncating()
                         }
-                    } label: {
-                        Label(issue.appearance == appearance ? issue.message : "\(issue.appearance): \(issue.message)", systemImage: issue.severity == .error ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(palette[issue.severity == .error ? .statusDanger : .statusWarning])
-                            .font(metrics.typography.caption)
-                            .multilineTextAlignment(.leading)
+                        .buttonStyle(.lumenPlain).lumenFocusRing()
+                        .disabled(issue.token == nil && issue.fix == nil)
+                        .help(issue.token.map { "Show \($0.rawValue)" } ?? "")
+                        if issue.fix != nil {
+                            Button("Fix") {
+                                do {
+                                    try session.fix(issue)
+                                    saveError = nil
+                                    validated = LumenValidator.issues(for: self.draft, in: registry)
+                                } catch { saveError = error.localizedDescription }
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
-                    .buttonStyle(.lumenPlain).lumenFocusRing()
-                    .disabled(issue.token == nil)
-                    .help(issue.token.map { "Show \($0.rawValue)" } ?? "")
-                }
-                if current.count > 6 {
-                    Text("and \(current.count - 6) more").font(metrics.typography.caption).foregroundStyle(palette[.fgTertiary])
                 }
             }
         }
@@ -251,19 +284,28 @@ public struct LumenThemeEditor: View {
 
     private func footer(_ issues: [LumenIssue]) -> some View {
         let hasErrors = issues.contains { $0.severity == .error }
-        return HStack {
+        return VStack(alignment: .leading, spacing: metrics.spacing.s3) {
             if let saveError {
                 Label(saveError, systemImage: "xmark.octagon.fill")
                     .foregroundStyle(palette[.statusDanger])
                     .font(metrics.typography.caption)
+                    .lumenWrapsWithoutTruncating()
             }
-            Spacer()
-            Button("Cancel", role: .cancel) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-            Button(editsInPlace ? "Save Changes" : "Save Theme") { save() }
-                .keyboardShortcut(.defaultAction)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || hasErrors)
-                .help(hasErrors ? "Fix the contrast errors to save" : "Save as a user theme")
+            HStack {
+                Spacer()
+                Button("Undo") { session.undo() }
+                    .disabled(!session.canUndo)
+                    .keyboardShortcut("z", modifiers: .command)
+                Button("Redo") { session.redo() }
+                    .disabled(!session.canRedo)
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(editsInPlace ? "Save Changes" : "Save Theme") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(session.name.trimmingCharacters(in: .whitespaces).isEmpty || hasErrors)
+                    .help(hasErrors ? "Fix the validation errors to save" : "Save as a user theme")
+            }
         }
         .padding(metrics.spacing.s5)
     }
@@ -276,11 +318,7 @@ public struct LumenThemeEditor: View {
         validated = current
         guard !current.contains(where: { $0.severity == .error }) else { return }
         do {
-            if editsInPlace {
-                try store.updateUserTheme(base.id, overrides: overrides)
-            } else {
-                _ = try store.saveUserTheme(name: name, inheriting: base, overrides: overrides)
-            }
+            try session.save()
             dismiss()
         } catch {
             saveError = error.localizedDescription

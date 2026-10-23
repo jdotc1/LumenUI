@@ -83,6 +83,44 @@ It can `inherits` another theme. Resolution order for a token:
 Unknown keys are kept, so one theme file works across apps; each app just flags the keys it
 doesn't know.
 
+### Theme schema 2
+
+`LumenTheme.metrics` is an optional `LumenThemeMetrics` value, independent of the color
+palettes. A theme still needs colors or an `inherits` parent. Each metric inherits separately:
+the nearest explicit value wins, and an absent value leaves the app's corresponding metrics
+unchanged. The Contrast theme declares `typeScale: 1.1`.
+
+| JSON member | Values |
+|---|---|
+| `radiusProfile` | `"standard"` (4, 6, 8, 10, 12 pt), `"rounded"` (6, 8, 10, 12, 12 pt), or a uniform number from 0 through 12 pt |
+| `typeScale` | A typography multiplier from 0.9 through 1.3 |
+| `spacingScale` | A spacing-ramp multiplier from 1.0 through 1.25 |
+| `motion` | `"standard"`, `"reduced"`, or `"none"` |
+
+New color-only themes continue to encode as schema 1, without a `metrics` key. A metrics
+declaration promotes the encoded version to 2; explicitly version-2 files are not downgraded
+when metrics are absent. Existing version-1 files retain their original
+bytes through an unchanged `LumenThemeLibrary` load/encode round trip, including whitespace,
+key order, omitted fields and unknown fields. Editing a theme produces canonical JSON instead.
+Files declaring version 3 or higher follow the existing "needs a newer app" error path.
+
+An app pack's `lockedMetrics: Set<LumenThemeMetrics.Key>` locks individual members; the registry
+unions all pack locks. Explicit and inherited declarations of a locked member are validator
+errors, and the store refuses to apply them through its import-error path. A lock never silently
+clamps a theme. The generated JSON Schema also forbids the registry's locked members.
+
+The palette root resolves the window theme's metrics for its own scoped store and injects
+`\.lumenMetrics`. An explicit app `.lumenMetrics` override wins. Type scales above 1 grow the
+control and row boxes by the same factor as their text; scales below 1 leave their boxes intact.
+The 24 pt `minimumHitTarget` remains a floor. Growing the boxes preserves room for larger type,
+as required by PRINCIPLES §6, rather than squeezing it into an unchanged height. Theme radius
+values are bounded by half the smallest 24 pt control height; omitting a radius declaration
+preserves existing app radii. Motion presets continue to respect system Reduce Motion.
+
+The canonical built-in JSON export includes metrics, and the schema and token reference describe
+their bounds, inheritance, and pack locks. `lumen-theme validate` uses the same validator as the
+store, including the new metric errors. See reference/dtcg.md and reference/theme-editor.md for interchange and editor behavior.
+
 **Surface.** Every app has `.window`. An app can add surfaces, such as Workbench's code editor or
 a document canvas, and let the user pick a different theme for each. A token resolves through
 its surface's theme. That keeps text and the fill under it from the same theme, so the validator's
@@ -241,7 +279,7 @@ pass `.hueBlue` to match `LumenCollectionItem` on the same page.
 
 - Semantic versioning. Adding a token or component is a minor version. Renaming or removing a
   token is a major version, and needs an alias period: the old key keeps resolving for a release.
-- The theme file format is versioned separately (`schemaVersion`, currently 1). A newer file loads
+- The theme file format is versioned separately (`schemaVersion`, currently 2). A newer file loads
   as "needs a newer app" instead of failing silently.
 - Built-in values can change in minor versions as long as every built-in still passes the validator
   in every registry that a Lumen test exercises.

@@ -125,22 +125,43 @@ public enum LumenThemeLibrary {
         var library = LumenUserThemeLibrary()
         for (theme, url) in themes {
             do {
-                library.themes.append(try theme.flattened { byID[$0] })
+                let flattened = try theme.flattened { byID[$0] }
+                try validateMetrics(flattened, registry: registry)
+                library.themes.append(flattened)
                 if let url { library.files[theme.id] = url }
             } catch {
                 let name = url?.lastPathComponent ?? theme.id
                 LumenThemeStore.log.error("Skipping theme \(name, privacy: .public): \(String(describing: error), privacy: .public)")
-                library.problems.append(LumenThemeFileProblem(file: name, reason: "it \(error)"))
+                let reason = (error as? LumenThemeImportError)?.errorDescription ?? "it \(error)"
+                library.problems.append(LumenThemeFileProblem(file: name, reason: reason))
             }
         }
         return library
     }
 
-    /// Decodes one theme file and checks its schema version.
+    /// Refuses invalid or pack-locked metrics through the same error path as a malformed import.
+    /// Call after inheritance so parent values cannot bypass an app's locks.
+    static func validateMetrics(_ theme: LumenTheme, registry: LumenRegistry) throws {
+        let issues = LumenValidator.metricIssues(in: theme, registry: registry)
+        guard issues.isEmpty else {
+            throw LumenThemeImportError.unreadable(issues.map(\.message).joined(separator: "; "))
+        }
+    }
+
+    /// Decodes one theme file and checks its schema version. Unchanged files retain their exact
+    /// bytes for `encodeTheme`, including v1 files that omit optional keys or use another spelling.
     public static func decodeTheme(_ data: Data) throws -> LumenTheme {
-        let theme: LumenTheme
+        // Read only the version first: future schemas may change even required fields' shapes.
+        struct Header: Decodable { let schemaVersion: Int? }
+        var theme: LumenTheme
         do {
+            let version = try JSONDecoder().decode(Header.self, from: data).schemaVersion ?? 1
+            guard version <= LumenTheme.currentSchemaVersion else {
+                throw LumenThemeImportError.newerSchema(version)
+            }
             theme = try JSONDecoder().decode(LumenTheme.self, from: data)
+        } catch let error as LumenThemeImportError {
+            throw error
         } catch let DecodingError.keyNotFound(key, _) {
             throw LumenThemeImportError.unreadable("“\(key.stringValue)” is missing")
         } catch let DecodingError.dataCorrupted(context) {
@@ -153,10 +174,20 @@ public enum LumenThemeLibrary {
         guard theme.schemaVersion <= LumenTheme.currentSchemaVersion else {
             throw LumenThemeImportError.newerSchema(theme.schemaVersion)
         }
+        if theme.metrics == nil || theme.schemaVersion >= 2 {
+            theme.retainSourceEncoding(data, canonical: try canonicalEncoding(theme))
+        }
         return theme
     }
 
+    /// Returns an unchanged file byte for byte. A changed or newly created theme is encoded in
+    /// the canonical format; schema 1 remains 1 until metrics are present.
     public static func encodeTheme(_ theme: LumenTheme) throws -> Data {
+        let canonical = try canonicalEncoding(theme)
+        return theme.sourceEncoding(matching: canonical) ?? canonical
+    }
+
+    private static func canonicalEncoding(_ theme: LumenTheme) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return try encoder.encode(theme)
@@ -228,6 +259,44 @@ public enum LumenThemeLibrary {
                           inherits: base.id, light: variant(false), dark: variant(true))
     }
 
+    /// Editor preview including independent Increase Contrast edits and metric overrides.
+    public static func editorPreview(name: String, inheriting base: LumenTheme,
+                                     overrides: [Bool: [LumenToken: LumenColor]],
+                                     highContrastOverrides: [Bool: [LumenToken: LumenColor]],
+                                     metrics: LumenThemeMetrics?) -> LumenTheme {
+        var theme = editorPreview(name: name, inheriting: base, overrides: overrides)
+        applyHighContrast(highContrastOverrides, to: &theme)
+        theme.metrics = normalizedMetrics((base.metrics ?? LumenThemeMetrics()).merging(metrics))
+        return theme
+    }
+
+    /// A partial editor file with metrics only when a member is explicitly set.
+    public static func partialTheme(name: String, inheriting base: LumenTheme,
+                                    overrides: [Bool: [LumenToken: LumenColor]],
+                                    highContrastOverrides: [Bool: [LumenToken: LumenColor]],
+                                    metrics: LumenThemeMetrics?, existingIDs: Set<String>) -> LumenTheme {
+        var theme = partialTheme(name: name, inheriting: base, overrides: overrides, existingIDs: existingIDs)
+        applyHighContrast(highContrastOverrides, to: &theme)
+        theme.metrics = normalizedMetrics(metrics)
+        return theme
+    }
+
+    static func normalizedMetrics(_ metrics: LumenThemeMetrics?) -> LumenThemeMetrics? {
+        guard let metrics, !metrics.keys.isEmpty else { return nil }
+        return metrics
+    }
+
+    static func applyHighContrast(_ overrides: [Bool: [LumenToken: LumenColor]], to theme: inout LumenTheme) {
+        for (dark, colors) in overrides where !colors.isEmpty {
+            let layer = palette(colors)
+            if dark {
+                theme.darkHighContrast = (theme.darkHighContrast ?? LumenPalette()).merging(layer)
+            } else {
+                theme.lightHighContrast = (theme.lightHighContrast ?? LumenPalette()).merging(layer)
+            }
+        }
+    }
+
     private static func palette(_ colors: [LumenToken: LumenColor]) -> LumenPalette {
         LumenPalette(colors: Dictionary(uniqueKeysWithValues: colors.map { ($0.key.rawValue, $0.value) }))
     }
@@ -256,7 +325,10 @@ extension LumenThemeStore {
             theme.name = "\(theme.name) \(suffix)"
         }
         do {
-            _ = try theme.flattened { id in registry.theme(id: id) ?? current.first { $0.id == id } }
+            let flattened = try theme.flattened { id in registry.theme(id: id) ?? current.first { $0.id == id } }
+            try LumenThemeLibrary.validateMetrics(flattened, registry: registry)
+        } catch let error as LumenThemeImportError {
+            throw error
         } catch {
             throw LumenThemeImportError.inheritance("\(error)")
         }
@@ -313,6 +385,25 @@ extension LumenThemeStore {
         }
     }
 
+    /// Saves all editor edits, replacing the file's own metric layer so Reset can inherit again.
+    public func updateUserTheme(_ id: LumenTheme.ID, overrides: [Bool: [LumenToken: LumenColor]],
+                                highContrastOverrides: [Bool: [LumenToken: LumenColor]],
+                                metrics: LumenThemeMetrics?) throws {
+        try rewriteUserTheme(id) { theme in
+            for (dark, colors) in overrides where !colors.isEmpty {
+                var palette = (dark ? theme.dark : theme.light) ?? LumenPalette()
+                for (token, color) in colors { palette[token] = color }
+                if dark { theme.dark = palette } else { theme.light = palette }
+                // Match child inheritance and the editor preview for normal color edits.
+                let layer = LumenPalette(colors: Dictionary(uniqueKeysWithValues: colors.map { ($0.key.rawValue, $0.value) }))
+                if dark { theme.darkHighContrast = theme.darkHighContrast?.merging(layer) }
+                else { theme.lightHighContrast = theme.lightHighContrast?.merging(layer) }
+            }
+            LumenThemeLibrary.applyHighContrast(highContrastOverrides, to: &theme)
+            theme.metrics = LumenThemeLibrary.normalizedMetrics(metrics)
+        }
+    }
+
     /// Reads a user theme's file as written (inheritance not merged), changes it, checks it still
     /// loads, and writes it back atomically.
     private func rewriteUserTheme(_ id: LumenTheme.ID, _ change: (inout LumenTheme) -> Void) throws {
@@ -320,7 +411,10 @@ extension LumenThemeStore {
         var theme = try LumenThemeLibrary.decodeTheme(Data(contentsOf: url))
         change(&theme)
         do {
-            _ = try theme.flattened { parent in registry.theme(id: parent) ?? themes.first { $0.id == parent } }
+            let flattened = try theme.flattened { parent in registry.theme(id: parent) ?? themes.first { $0.id == parent } }
+            try LumenThemeLibrary.validateMetrics(flattened, registry: registry)
+        } catch let error as LumenThemeImportError {
+            throw error
         } catch {
             throw LumenThemeImportError.inheritance("\(error)")
         }
@@ -375,9 +469,33 @@ extension LumenThemeStore {
             theme = complete
         }
         do {
-            _ = try theme.flattened { id in registry.theme(id: id) ?? themes.first { $0.id == id } }
+            let flattened = try theme.flattened { id in registry.theme(id: id) ?? themes.first { $0.id == id } }
+            try LumenThemeLibrary.validateMetrics(flattened, registry: registry)
+        } catch let error as LumenThemeImportError {
+            throw error
         } catch {
             throw LumenThemeImportError.inheritance("\(error)")
+        }
+        let url = try writeNewTheme(theme)
+        try loadWrittenTheme(theme.id, from: url)
+        return url
+    }
+
+    /// Saves independent Increase Contrast edits and the explicitly selected metric layer.
+    @discardableResult
+    public func saveUserTheme(name: String, inheriting base: LumenTheme,
+                              overrides: [Bool: [LumenToken: LumenColor]],
+                              highContrastOverrides: [Bool: [LumenToken: LumenColor]],
+                              metrics: LumenThemeMetrics?) throws -> URL {
+        var theme = LumenThemeLibrary.partialTheme(name: name, inheriting: base, overrides: overrides,
+            highContrastOverrides: highContrastOverrides, metrics: metrics, existingIDs: takenThemeIDs)
+        // Generated seeds have no registered parent, so save their complete palettes as well.
+        if userThemeFile(for: base.id) != nil || registry.theme(id: base.id) == nil {
+            var complete = LumenThemeLibrary.editorPreview(name: name, inheriting: base, overrides: overrides,
+                highContrastOverrides: highContrastOverrides, metrics: metrics)
+            complete.id = theme.id
+            complete.summary = theme.summary
+            theme = complete
         }
         let url = try writeNewTheme(theme)
         try loadWrittenTheme(theme.id, from: url)
@@ -390,6 +508,14 @@ extension LumenThemeStore {
     /// including when another writer wins the name or a dangling symlink already occupies it.
     @discardableResult
     public func writeNewTheme(_ theme: LumenTheme) throws -> URL {
+        do {
+            let flattened = try theme.flattened { id in registry.theme(id: id) ?? themes.first { $0.id == id } }
+            try LumenThemeLibrary.validateMetrics(flattened, registry: registry)
+        } catch let error as LumenThemeImportError {
+            throw error
+        } catch {
+            throw LumenThemeImportError.inheritance("\(error)")
+        }
         let manager = FileManager.default
         try manager.createDirectory(at: themesDirectory, withIntermediateDirectories: true)
         let temporary = themesDirectory.appending(path: ".\(UUID().uuidString).theme")

@@ -128,7 +128,9 @@ private struct WorkbenchRehearsalSidebar: View {
                         LumenSidebarCountSection("Functions", systemImage: "lumen.pseudocode", hue: .hueBlue,
                                                  count: 3, emptyMessage: "No functions") {
                             ForEach(["main", "parse_header", "read_segment"], id: \.self) { name in
-                                LumenListRow(name, systemImage: "lumen.pseudocode", isSelected: selection == name)
+                                LumenListRow(name, systemImage: "lumen.pseudocode", isSelected: selection == name, context: .sidebar)
+                                    .lumenSidebarRowInset(12)
+                                    .padding(.horizontal, -12)
                                     .onTapGesture { selection = name }
                             }
                         }

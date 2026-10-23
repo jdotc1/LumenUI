@@ -153,10 +153,12 @@ panel toggles are never dropped (the status may give way), and no panel starts u
 
 | Family | Look |
 |---|---|
-| Navigation lists and tables (source lists, sidebars, `LumenTable`) | Quiet: `bg.selected` (inactive: `bg.selectedInactive`); in a sidebar, `sidebar.rowSelected` (inactive: `sidebar.rowSelectedInactive`), which fall back to them |
+| Navigation lists and tables (source lists, sidebars, `LumenTable`) | Quiet: `bg.selected` (inactive: `bg.selectedInactive`); in a sidebar, `sidebar.rowSelected` (inactive: `sidebar.rowSelectedInactive`), which fall back to them. Across sidebars, selected titles are semi-bold in active and inactive windows; reserve their semi-bold width so selection never shifts text. Subtitles and count badges keep their normal weight |
 | Menus, pickers, the command palette, completion, master-detail lists, history rows, collections, filter chips, segmented controls (pill switcher, tabbed-box strip, palette scopes) | Filled: `accent.filled` under `accent.filledForeground` (white); rows inset with `radius.sm` |
 | Modes and tools (mode switchers, tool tiles) | A plate behind the selected item |
 | Code rows (listings, hex) | A full-width band with an accent bar |
+
+Sidebar hit areas and scroll regions reach the window and column edges on macOS 27. Visible row selections remain inset, in a `radius.sm` continuous rectangle; padding belongs inside the full-width hit area.
 
 **One filled-accent look.** Every filled accent shape (primary buttons, checked checkboxes and
 radios, a switch that's on, selected chips, filled selections) uses `accent.filled` with white text
@@ -185,7 +187,7 @@ behavior (§1): Reduce Transparency, Increase Contrast and the transparency slid
 policy is [GLASS.md](GLASS.md); this is its summary.
 
 - **Two layers.** The navigation layer (the window toolbar's background, the unified top bar's
-  band, the sidebar edge, floating palettes such as ⌘K and the input palette, popovers) may use
+  band, the sidebar edge, floating palettes such as ⌘K and the input palette, transient toast stacks, popovers) may use
   system glass. The content layer (lists, tables, cards, editors, inspectors, sheets, settings
   panes, status bars, menus) never does.
 - **No glass on glass.** One glass surface along any line of sight: a palette over a glass toolbar

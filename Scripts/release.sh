@@ -2,7 +2,7 @@
 # maintainer script; pushes tags
 # Tags a Lumen release only after everything that could make it a bad one has passed: the API check
 # against the previous release (with the changelog owning up to any break), a strict build, and the
-# whole test suite with goldens. Then it tags and pushes.
+# whole test suite with goldens. Theme changes stop for changelog review; otherwise it tags and pushes.
 #
 #   Scripts/release.sh 0.12.0
 set -euo pipefail
@@ -24,6 +24,15 @@ echo "== API check against $previous"
 Scripts/api-check.sh "$previous"
 echo "== Strict build"
 swift build --scratch-path "$scratch" --build-tests -Xswiftc -warnings-as-errors
+# Before the suite, so a stop doesn't waste a full run. The helper exits 3 when theme values changed and
+# the changelog lacked the report: it writes the report for review and nothing is tagged. Commit the
+# reviewed changelog and run again; a changelog that already carries the report continues.
+theme_report="$scratch/release-theme-values"
+mkdir -p "$theme_report/current"
+"$scratch/debug/lumen-theme" export "$theme_report/current" >/dev/null
+git show "$previous:Docs/reference/builtin-themes.json" > "$theme_report/previous.json"
+python3 Scripts/release-theme-values.py "$scratch/debug/lumen-theme" \
+  "$theme_report/previous.json" "$theme_report/current/builtin-themes.json" CHANGELOG.md "$version"
 echo "== Tests (goldens included)"
 swift test --scratch-path "$scratch" --skip-build
 echo "== Tagging $tag"

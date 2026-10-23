@@ -231,7 +231,7 @@ public struct LumenBanner: View {
     @ViewBuilder private var actionButton: some View {
         if let actionTitle, let action {
             Button(actionTitle, action: action)
-                .buttonStyle(BannerActionStyle(edge: palette[tone.foreground].opacity(0.36)))
+                .buttonStyle(NoticeActionStyle(edge: palette[tone.foreground].opacity(0.36)))
                 .lumenFocusRing()
                 .fixedSize()
         }
@@ -256,9 +256,9 @@ public struct LumenBanner: View {
     }
 }
 
-/// A banner's action: neutral, so it never brings the accent onto a status color (an accent-tinted
+/// A notice's bordered action: neutral, so it never brings the accent onto a status color (an accent-tinted
 /// Reanalyze clashed with the amber warning). The raised surface with the banner's own edge color.
-private struct BannerActionStyle: ButtonStyle {
+struct NoticeActionStyle: ButtonStyle {
     let edge: Color
 
     func makeBody(configuration: Configuration) -> some View { ActionLabel(configuration: configuration, edge: edge) }

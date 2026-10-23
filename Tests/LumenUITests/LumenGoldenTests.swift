@@ -8,11 +8,25 @@ import LumenConformance
 /// showcase under custom metrics. Re-record after an intentional visual change with
 /// `LUMEN_RECORD_SNAPSHOTS=1 swift test --filter LumenGoldenTests` (that run fails by design),
 /// review the PNGs in Tests/LumenUITests/Goldens, then run again.
+/// Set `LUMEN_GOLDEN_THEME=contrast` to limit recording and design-rule checks to that theme;
+/// a full theme ID or exact variant label (for example, `contrast-dark`) also selects a scope.
+/// Use `non-contrast` to compare all other built-in variants without rechecking Contrast.
 @MainActor
 final class LumenGoldenTests: XCTestCase {
     /// CI runs on another macOS, whose text rendering differs from the recording machine's: there
     /// `LUMEN_SKIP_GOLDENS=1` skips the image comparisons. The design-rule checks in `check` still run.
     static var skipsGoldens: Bool { ProcessInfo.processInfo.environment["LUMEN_SKIP_GOLDENS"] == "1" }
+
+    private static var selectedTheme: String? {
+        ProcessInfo.processInfo.environment["LUMEN_GOLDEN_THEME"].flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private func includes(_ variant: LumenSnapshot.Variant) -> Bool {
+        guard let selection = Self.selectedTheme else { return true }
+        if selection == "non-contrast" { return variant.themeID != LumenThemes.contrastID }
+        return variant.themeID == selection || variant.label == selection
+            || variant.themeID.split(separator: ".").last.map(String.init) == selection
+    }
 
     private func skipGoldensIfNeeded() throws {
         try XCTSkipIf(Self.skipsGoldens, "Golden images are checked on the recording Mac")
@@ -52,8 +66,49 @@ final class LumenGoldenTests: XCTestCase {
     private func check<V: View>(_ view: V, _ name: String, _ size: CGSize, metrics: LumenMetrics = .standard,
                                 only: [LumenSnapshot.Variant]? = nil, registry: LumenRegistry? = nil,
                                 renderer: LumenSnapshot.Renderer? = nil) {
-        // PRINCIPLES §6–7 on every golden view, whether or not its images are compared here.
-        let content = { view.lumenMetrics(metrics) }
+        if let selection = Self.selectedTheme, !variants.contains(where: includes) {
+            XCTFail("Unknown golden theme or variant: \(selection)")
+            return
+        }
+        let selectedVariants = (only ?? variants).filter(includes)
+        guard !selectedVariants.isEmpty else { return }
+        let selectedRegistry = registry ?? self.registry
+        // Every subject needs room for taller themed type. Explicit app metrics and
+        // unscaled themes retain their exact original canvas; widths never change.
+        func captureSize(for variant: LumenSnapshot.Variant) -> CGSize {
+            guard metrics == .standard else { return size }
+            let scale = selectedRegistry.theme(id: variant.themeID)?.metrics?.typeScale ?? 1
+            guard scale > 1 else { return size }
+            return CGSize(width: size.width, height: ceil(size.height * scale))
+        }
+        if Self.selectedTheme != nil {
+            // Scope design-rule checks to the same changed theme as its images. Explicit app
+            // metrics retain precedence, just as they do in the snapshot renderer.
+            for variant in selectedVariants {
+                let store = LumenSnapshot.store(for: variant, registry: selectedRegistry)
+                let resolvedMetrics = metrics == .standard ? store.resolvedMetrics() : metrics
+                LumenThemeStore.withActiveStore(store) {
+                    checkDesignRules(view.lumenPaletteRoot(store: store)
+                        .environment(\.colorScheme, variant.colorScheme)
+                        .lumenMetrics(resolvedMetrics), "\(name)@\(variant.label)", captureSize(for: variant))
+                }
+            }
+        } else {
+            // Preserve the normal run's once-per-subject design-rule coverage.
+            checkDesignRules(view.lumenMetrics(metrics), name, size)
+        }
+        guard !Self.skipsGoldens else { return }
+        for variant in selectedVariants {
+            let outcome = LumenSnapshot.verify(view, named: name, size: captureSize(for: variant), variant: variant, registry: selectedRegistry,
+                                               metrics: metrics, goldenDirectory: Self.goldens,
+                                               renderer: renderer ?? (Self.windowRendered.contains(name) ? .window : .image))
+            if let message = outcome.failureMessage { XCTFail("\(name)@\(variant.label): \(message)") }
+        }
+    }
+
+    private func checkDesignRules<V: View>(_ view: V, _ name: String, _ size: CGSize) {
+        // PRINCIPLES §6–7 on every selected golden view, even when image comparisons are skipped.
+        let content = { view }
         let sizes = [size]
         let findings = LumenConformance.truncation(sizes: sizes, of: content).map { "\(name) · truncation · \($0)" }
             + LumenConformance.iconScale(sizes: sizes, of: content).map { "\(name) · iconScale · \($0)" }
@@ -62,16 +117,10 @@ final class LumenGoldenTests: XCTestCase {
         for finding in findings where !Self.knownFindings.contains(finding) {
             XCTFail("new design-rule finding: \"\(finding)\"")
         }
-        guard !Self.skipsGoldens else { return }
-        for variant in only ?? variants {
-            let outcome = LumenSnapshot.verify(view, named: name, size: size, variant: variant, registry: registry ?? self.registry,
-                                               metrics: metrics, goldenDirectory: Self.goldens,
-                                               renderer: renderer ?? (Self.windowRendered.contains(name) ? .window : .image))
-            if let message = outcome.failureMessage { XCTFail("\(name)@\(variant.label): \(message)") }
-        }
     }
 
     func testVariantsCoverEveryBuiltInAppearance() throws {
+        try XCTSkipIf(Self.selectedTheme != nil, "Variant inventory is independent of a scoped theme change")
         try skipGoldensIfNeeded()
         XCTAssertEqual(variants.map(\.label), ["standard-light", "standard-dark", "midnight-dark", "ultraviolet-dark", "contrast-light", "contrast-dark"])
     }
@@ -443,6 +492,7 @@ final class LumenGoldenTests: XCTestCase {
     }
 
     func testDockIconImageIsFullResolution() throws {
+        try XCTSkipIf(Self.selectedTheme != nil, "Dock icon resolution is independent of a scoped theme change")
         try skipGoldensIfNeeded()
         let image = try XCTUnwrap(LumenDockIcon.image("lumen.lens", hue: .hueViolet))
         XCTAssertEqual(image.size, NSSize(width: 512, height: 512))
@@ -451,6 +501,7 @@ final class LumenGoldenTests: XCTestCase {
 
     func testShowcaseAdaptsToAppMetrics() throws {
         let light = try XCTUnwrap(variants.first)
+        try XCTSkipUnless(includes(light), "Custom app metrics use the Standard theme")
         check(LumenShowcase(), "showcase-custom-metrics", CGSize(width: 560, height: 340), metrics: Self.customMetrics, only: [light])
         try skipGoldensIfNeeded()
         let standard = try XCTUnwrap(LumenSnapshot.png(of: LumenShowcase(), size: CGSize(width: 560, height: 340), variant: light, registry: registry))
@@ -962,35 +1013,47 @@ final class LumenGoldenTests: XCTestCase {
         .background(InspectorFill()), "forms", CGSize(width: 810, height: 380))
     }
 
+    /// Fixture-only horizontal room for themed text; standard captures keep their layout.
+    private struct TypeScaledFixture<Content: View>: View {
+        @Environment(\.lumenMetrics) private var metrics
+        @ViewBuilder let content: (Bool) -> Content
+
+        var body: some View {
+            content(metrics.layout.controlHeight > LumenMetrics.standard.layout.controlHeight)
+        }
+    }
+
     func testDataViews() {
         let notice = LumenNotice(source: "Extension: GitHub", title: "GitHub repository detected",
                                  message: "Connect jdotc1/LumenUI to show issues and pull requests?", systemImage: "arrow.triangle.branch",
                                  primary: LumenBarAction("Connect") {}, secondary: LumenBarAction("Not Now") {})
-        check(HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                LumenNoticeCard(notice) {}
-                LumenOutlineControls(mode: .constant(.tree), depth: .constant(2), sortsAlphabetically: .constant(false))
-                    .frame(width: 300).lumenSidebarBackground()
-                LumenComparisonHeader(leading: LumenComparisonSide("Current Version", tone: .hueBlue,
-                                                                   choices: [LumenBarAction("Latest Commit") {}]),
-                                      trailing: LumenComparisonSide("Latest Commit", tone: .hueOrange), detail: "Consistency cleanup")
-                    .frame(width: 400)
-                LumenDiffNavigator(status: "2 of 5", ignoresWhitespace: .constant(false), onPrevious: {}, onNext: {})
-            }
-            VStack(spacing: 0) {
-                LumenHistoryRow(message: "Consistency cleanup: code font fallbacks", hash: "a1f5083",
-                                refs: [("HEAD", .head), ("main", .branch), ("origin/main", .remote)], time: "14m", author: "jdotc1",
-                                isFirst: true)
-                LumenHistoryRow(message: "Catalog Editor page", hash: "7ec64f9", refs: [("v0.27.0", .tag)], time: "28m", author: "jdotc1",
-                                isSelected: true)
-                LumenHistoryRow(message: "Strings navigator rows", hash: "7c42c22", time: "32m", author: "Build Bot", isLast: true)
-            }
-            .frame(width: 330).lumenSidebarBackground()
-            LumenMinimap(lineLengths: (0..<60).map { [40, 12, 66, 30, 0, 52, 24, 70][$0 % 8] },
-                         lineTokens: (0..<60).map { [LumenToken.hueBlue, .fgSecondary, .huePink, .hueGreen][$0 % 4] },
-                         viewport: .constant(0.25...0.5))
-                .frame(height: 200)
-        }.padding(14), "data-views", CGSize(width: 900, height: 300))
+        check(TypeScaledFixture { scaled in
+            HStack(alignment: .top, spacing: scaled ? 14 : 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    LumenNoticeCard(notice) {}
+                    LumenOutlineControls(mode: .constant(.tree), depth: .constant(2), sortsAlphabetically: .constant(false))
+                        .frame(width: 300).lumenSidebarBackground()
+                    LumenComparisonHeader(leading: LumenComparisonSide("Current Version", tone: .hueBlue,
+                                                                       choices: [LumenBarAction("Latest Commit") {}]),
+                                          trailing: LumenComparisonSide("Latest Commit", tone: .hueOrange), detail: "Consistency cleanup")
+                        .frame(width: 400)
+                    LumenDiffNavigator(status: "2 of 5", ignoresWhitespace: .constant(false), onPrevious: {}, onNext: {})
+                }
+                VStack(spacing: 0) {
+                    LumenHistoryRow(message: "Consistency cleanup: code font fallbacks", hash: "a1f5083",
+                                    refs: [("HEAD", .head), ("main", .branch), ("origin/main", .remote)], time: "14m", author: "jdotc1",
+                                    isFirst: true)
+                    LumenHistoryRow(message: "Catalog Editor page", hash: "7ec64f9", refs: [("v0.27.0", .tag)], time: "28m", author: "jdotc1",
+                                    isSelected: true)
+                    LumenHistoryRow(message: "Strings navigator rows", hash: "7c42c22", time: "32m", author: "Build Bot", isLast: true)
+                }
+                .frame(width: scaled ? 363 : 330).lumenSidebarBackground()
+                LumenMinimap(lineLengths: (0..<60).map { [40, 12, 66, 30, 0, 52, 24, 70][$0 % 8] },
+                             lineTokens: (0..<60).map { [LumenToken.hueBlue, .fgSecondary, .huePink, .hueGreen][$0 % 4] },
+                             viewport: .constant(0.25...0.5))
+                    .frame(height: 200)
+            }.padding(14)
+        }, "data-views", CGSize(width: 900, height: 300))
     }
 
     func testToolsBatch() {
@@ -1005,37 +1068,39 @@ final class LumenGoldenTests: XCTestCase {
             LumenCollectionItem(id: "workbench", title: "Workbench", detail: "~/Projects/Workbench", systemImage: "scope", hue: .hueBlue, group: "Apps"),
             LumenCollectionItem(id: "images", title: "Image Organizer", detail: "~/Projects/Images", systemImage: "cross.case", hue: .hueTeal, group: "Apps"),
         ]
-        check(HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                LumenSidebarPaneGrid(panes, arrangement: .constant("files,find,-symbols,git")).frame(width: 260).lumenSidebarBackground()
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack { Text("Toggle Panel").font(.callout); Spacer()
-                        LumenShortcutRecorder(shortcut: .constant(KeyboardShortcut("y", modifiers: [.command, .shift]))) }
-                    HStack { Text("Go to Line…").font(.callout); Spacer()
-                        LumenShortcutRecorder(shortcut: .constant(nil), conflict: nil, width: 130, recording: true) }
-                    HStack { Text("Jump to Selection").font(.callout); Spacer()
-                        LumenShortcutRecorder(shortcut: .constant(KeyboardShortcut("l", modifiers: [.command, .option])),
-                                              conflict: "Also used by Run Latest Test") }
+        check(TypeScaledFixture { scaled in
+            HStack(alignment: .top, spacing: scaled ? 8 : 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    LumenSidebarPaneGrid(panes, arrangement: .constant("files,find,-symbols,git")).frame(width: 260).lumenSidebarBackground()
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack { Text("Toggle Panel").font(.callout); Spacer()
+                            LumenShortcutRecorder(shortcut: .constant(KeyboardShortcut("y", modifiers: [.command, .shift]))) }
+                        HStack { Text("Go to Line…").font(.callout); Spacer()
+                            LumenShortcutRecorder(shortcut: .constant(nil), conflict: nil, width: 130, recording: true) }
+                        HStack { Text("Jump to Selection").font(.callout); Spacer()
+                            LumenShortcutRecorder(shortcut: .constant(KeyboardShortcut("l", modifiers: [.command, .option])),
+                                                  conflict: "Also used by Run Latest Test") }
+                    }
+                    .padding(.horizontal, LumenMetrics.standard.spacing.s3)   // the pane grid's inset: one leading edge for the column
+                    .frame(width: 300)
                 }
-                .padding(.horizontal, LumenMetrics.standard.spacing.s3)   // the pane grid's inset: one leading edge for the column
-                .frame(width: 300)
+                VStack(alignment: .leading, spacing: 12) {
+                    LumenCompletionList([
+                        LumenCompletion("AnyClass", detail: "any AnyObject.Type", kind: .type),
+                        LumenCompletion("AnyCollection", detail: "AnyCollection<Element>", kind: .structure),
+                        LumenCompletion("anyMatches(_:)", detail: "(String) -> Bool", kind: .function),
+                    ], typed: "Any", selection: .constant("AnyCollection")) { _ in }
+                    .frame(width: 320)
+                    LumenCollection(items, mode: .list, selection: .constant("workbench"), sort: .constant(.title)) { _ in }
+                        .frame(width: scaled ? 440 : 400)
+                    LumenCollection(items, mode: .grid, size: 90, selection: .constant("lumen"), sort: .constant(.title)) { _ in }
+                        .frame(width: 400)
+                }
             }
-            VStack(alignment: .leading, spacing: 12) {
-                LumenCompletionList([
-                    LumenCompletion("AnyClass", detail: "any AnyObject.Type", kind: .type),
-                    LumenCompletion("AnyCollection", detail: "AnyCollection<Element>", kind: .structure),
-                    LumenCompletion("anyMatches(_:)", detail: "(String) -> Bool", kind: .function),
-                ], typed: "Any", selection: .constant("AnyCollection")) { _ in }
-                .frame(width: 320)
-                LumenCollection(items, mode: .list, selection: .constant("workbench"), sort: .constant(.title)) { _ in }
-                    .frame(width: 400)
-                LumenCollection(items, mode: .grid, size: 90, selection: .constant("lumen"), sort: .constant(.title)) { _ in }
-                    .frame(width: 400)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(InspectorFill()), "tools", CGSize(width: 760, height: 520))
+            .padding(scaled ? 6 : 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(InspectorFill())
+        }, "tools", CGSize(width: 760, height: 520))
     }
 
     func testControls() {

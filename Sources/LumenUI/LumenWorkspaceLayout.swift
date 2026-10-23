@@ -416,6 +416,8 @@ public struct LumenStackedSidebar: View {
         }
         // The headers and the grips between them are always drawn, so the minimum covers both.
         .frame(minHeight: Self.chromeHeight(paneCount: panes.count, headerHeight: metrics.layout.paneHeaderHeight))
+        .environment(\.lumenSidebarRows, true)
+        .environment(\.lumenSidebarRowInset, metrics.spacing.s2)
         .animation(metrics.motion.animation(metrics.motion.standardCurve, reduceMotion: reduceMotion), value: collapsed)
     }
 

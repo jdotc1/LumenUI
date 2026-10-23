@@ -100,7 +100,10 @@ public struct LumenListRow<Trailing: View>: View {
     private let hue: LumenToken?
     private let isSelected: Bool
     private let isFocused: Bool
-    private let context: LumenRowContext
+    private let explicitContext: LumenRowContext?
+    @Environment(\.lumenSidebarRows) private var sidebarRows
+    @Environment(\.lumenSidebarRowInset) private var sidebarRowInset
+    private var context: LumenRowContext { explicitContext ?? (sidebarRows ? .sidebar : .content) }
     private let monospaced: Bool
     private let trailing: Trailing
 
@@ -113,11 +116,29 @@ public struct LumenListRow<Trailing: View>: View {
     @State private var isHovered = false
     @Environment(\.lumenForcedHover) private var forcedHover   // hover states in tests
 
+    /// Infers sidebar styling inside a stacked sidebar and content styling elsewhere.
+    public init(_ title: String, detail: String? = nil, systemImage: String? = nil, hue: LumenToken? = nil,
+                isSelected: Bool = false, isFocused: Bool = false,
+                monospaced: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+        self.init(title, detail: detail, systemImage: systemImage, hue: hue, isSelected: isSelected, isFocused: isFocused,
+                  context: Optional<LumenRowContext>.none, monospaced: monospaced, trailing: trailing)
+    }
+
+    /// Uses the given context even when the row is inside a sidebar.
+    /// The no-context overload handles omitted arguments; this signature preserves the original API.
     /// - Parameters:
     ///   - monospaced: the title in the code font (symbols, addresses).
     ///   - trailing: a count, badge or keycap at the trailing edge.
     public init(_ title: String, detail: String? = nil, systemImage: String? = nil, hue: LumenToken? = nil,
                 isSelected: Bool = false, isFocused: Bool = false, context: LumenRowContext = .content,
+                monospaced: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+        self.init(title, detail: detail, systemImage: systemImage, hue: hue, isSelected: isSelected, isFocused: isFocused,
+                  context: Optional(context), monospaced: monospaced, trailing: trailing)
+    }
+
+    /// An optional explicit context; `nil` infers the row's surrounding sidebar or content area.
+    public init(_ title: String, detail: String? = nil, systemImage: String? = nil, hue: LumenToken? = nil,
+                isSelected: Bool = false, isFocused: Bool = false, context: LumenRowContext?,
                 monospaced: Bool = false, @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.detail = detail
@@ -125,7 +146,7 @@ public struct LumenListRow<Trailing: View>: View {
         self.hue = hue
         self.isSelected = isSelected
         self.isFocused = isFocused
-        self.context = context
+        self.explicitContext = context
         self.monospaced = monospaced
         self.trailing = trailing()
     }
@@ -145,11 +166,9 @@ public struct LumenListRow<Trailing: View>: View {
                 }
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(monospaced ? (codeFont?.font() ?? metrics.typography.monoSmall) : metrics.typography.body)
+                LumenSidebarTitle(title, font: monospaced ? (codeFont?.font() ?? metrics.typography.monoSmall) : metrics.typography.body,
+                                  isSelected: isSelected, reservesSelectionWidth: context == .sidebar)
                     .foregroundStyle(colors.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
                 if let detail {
                     // A monospaced row's detail is code too (an address), so its digits align row to row.
                     Text(detail)
@@ -165,6 +184,7 @@ public struct LumenListRow<Trailing: View>: View {
         .padding(.horizontal, metrics.spacing.s3)
         .frame(minHeight: detail == nil ? density.rowHeight(in: metrics.layout) : density.detailedRowHeight(in: metrics.layout))
         .lumenRowBackground(state, context: context)
+        .padding(.horizontal, context == .sidebar ? sidebarRowInset : 0)
         .contentShape(.rect)
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .combine)
@@ -173,8 +193,23 @@ public struct LumenListRow<Trailing: View>: View {
 }
 
 public extension LumenListRow where Trailing == EmptyView {
+    /// Infers sidebar styling inside a stacked sidebar and content styling elsewhere.
+    init(_ title: String, detail: String? = nil, systemImage: String? = nil, hue: LumenToken? = nil,
+         isSelected: Bool = false, isFocused: Bool = false, monospaced: Bool = false) {
+        self.init(title, detail: detail, systemImage: systemImage, hue: hue, isSelected: isSelected, isFocused: isFocused,
+                  context: Optional<LumenRowContext>.none, monospaced: monospaced) { EmptyView() }
+    }
+
+    /// Uses the given context even when the row is inside a sidebar.
     init(_ title: String, detail: String? = nil, systemImage: String? = nil, hue: LumenToken? = nil,
          isSelected: Bool = false, isFocused: Bool = false, context: LumenRowContext = .content, monospaced: Bool = false) {
+        self.init(title, detail: detail, systemImage: systemImage, hue: hue, isSelected: isSelected, isFocused: isFocused,
+                  context: context, monospaced: monospaced) { EmptyView() }
+    }
+
+    /// An optional explicit context; `nil` infers the row's surrounding sidebar or content area.
+    init(_ title: String, detail: String? = nil, systemImage: String? = nil, hue: LumenToken? = nil,
+         isSelected: Bool = false, isFocused: Bool = false, context: LumenRowContext?, monospaced: Bool = false) {
         self.init(title, detail: detail, systemImage: systemImage, hue: hue, isSelected: isSelected, isFocused: isFocused,
                   context: context, monospaced: monospaced) { EmptyView() }
     }
@@ -386,7 +421,6 @@ public struct LumenSourceList: View {
                 // narrow column can't center the list and cut its leading edge. A list
                 // that still can't fit (a long section label) reports itself.
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, metrics.spacing.s2)
                 .padding(.vertical, metrics.spacing.s2)
                 .padding(.top, geometry.safeAreaInsets.top)
                 .lumenColumnWidthWatch("Source list", columnWidth: geometry.size.width)
@@ -396,6 +430,7 @@ public struct LumenSourceList: View {
             .onChange(of: selection) { _, id in if let id { proxy.scrollTo(id) } }
         }
         }
+        .environment(\.lumenSidebarRowInset, metrics.spacing.s2)
         .focusable(interactions: .activate)
         .focused($focused)
         .focusEffectDisabled()

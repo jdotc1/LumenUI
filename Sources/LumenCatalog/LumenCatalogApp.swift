@@ -60,6 +60,7 @@ struct LumenCatalogApp: App {
         }
         .commands {
             CatalogCommands()
+            LumenShortcutsCommands()
             LumenViewCommands()   // View › Show/Hide Navigator, Panel, Inspector; Window › Previous/Next Tab
         }
 
@@ -184,15 +185,15 @@ struct CatalogCommands: Commands {
             Button(newDocument == nil ? "New Window" : "New Document") {
                 if let newDocument { newDocument() } else { openWindow(id: "catalog") }
             }
-            .keyboardShortcut("n")
+            .keyboardShortcut(CatalogShortcutDefinitions.newWindow.shortcut)
         }
         CommandMenu("Lumen") {
             Button("Workbench Rehearsal") { openWindow(id: "workbench-rehearsal") }
             Divider()
             Button {} label: { LumenMenuLabel("Go to Address…", systemImage: "number", hue: .hueBlue) }
-                .keyboardShortcut("g")
+                .keyboardShortcut(CatalogShortcutDefinitions.goToAddress.shortcut)
             Button {} label: { LumenMenuLabel("Find in Project", systemImage: "magnifyingglass", hue: .hueTeal) }
-                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .keyboardShortcut(CatalogShortcutDefinitions.findInProject.shortcut)
             Menu {
                 Button {} label: { LumenMenuLabel("Calculator.app", systemImage: "app.fill", hue: .hueGraphite) }
                 Button {} label: { LumenMenuLabel("libsystem_kernel.dylib", systemImage: "shippingbox.fill", hue: .hueIndigo) }
@@ -279,6 +280,7 @@ struct CatalogView: View {
     @State private var activity: LumenActivity = .idle()
     @State private var job: Task<Void, Never>?
     @State private var showsPalette = false
+    @State private var toastCenter = LumenToastCenter()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     /// `LUMEN_CATALOG_INSPECTOR=0` starts with the inspector hidden.
     @State private var showsInspector = ProcessInfo.processInfo.environment["LUMEN_CATALOG_INSPECTOR"] != "0"
@@ -339,6 +341,9 @@ struct CatalogView: View {
 
     var body: some View {
         columns
+        .environment(toastCenter)
+        .lumenToasts(toastCenter)
+        .lumenShortcutsSheet(groups: CatalogShortcutDefinitions.groups)
         .background(CatalogToolbarReport())
         .navigationTitle("")
         .lumenCommandPalette(isPresented: $showsPalette, commands: paletteCommands, scopes: CatalogPalette.scopes,
@@ -533,13 +538,13 @@ extension CatalogView {
     /// Build, Run and Stop drive the toolbar's live activity, as a real app's tasks would.
     var tasks: [LumenTaskAction] {
         [
-            LumenTaskAction("Build", systemImage: "hammer.fill", shortcut: KeyboardShortcut("b", modifiers: [.command])) {
+            LumenTaskAction("Build", systemImage: "hammer.fill", shortcut: CatalogShortcutDefinitions.build.shortcut) {
                 run("Building Lumen…", steps: 12, result: .succeeded("Build succeeded"))
             },
-            LumenTaskAction("Run", systemImage: "play.fill", role: .start, shortcut: KeyboardShortcut("r", modifiers: [.command])) {
+            LumenTaskAction("Run", systemImage: "play.fill", role: .start, shortcut: CatalogShortcutDefinitions.run.shortcut) {
                 run("Analyzing libsystem_kernel.dylib", steps: 40, result: .succeeded("Analysis finished: 1,284 functions"))
             },
-            LumenTaskAction("Stop", systemImage: "stop.fill", role: .stop, shortcut: KeyboardShortcut(".", modifiers: [.command])) {
+            LumenTaskAction("Stop", systemImage: "stop.fill", role: .stop, shortcut: CatalogShortcutDefinitions.stop.shortcut) {
                 job?.cancel()
                 activity = .failed("Stopped")
             },
@@ -574,7 +579,7 @@ struct PageHeader: View {
 struct ThemesPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PageHeader(title: "Themes", summary: "Every theme the app offers, as a miniature of its window. Click one to use it; drop a theme file here to add it.")
+            PageHeader(title: "Themes", summary: "Every theme the app offers, as a miniature of its window. Click one to use it; customize colors and metrics, fix findings, or create a theme from a hue and paired grounds. Drop a theme file here to add it.")
             LumenThemeGallery()
             PageHeader(title: "Every built-in theme, live", summary: "The same components drawn by each built-in theme at once. Each preview has a store of its own; the app’s theme doesn’t change.")
                 .padding(.top, 12)
@@ -1577,6 +1582,7 @@ struct StatesPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             PageHeader(title: "States & Rows", summary: "What a pane says when it isn’t simply showing content, and rows that look the same in every app: selection that goes quiet in an inactive window, hover, focus and disabled.")
+            CatalogToastSection()
             LumenSectionHeader("Banner")
             if showsBanner {
                 LumenBanner("The binary changed on disk since it was analyzed.", title: "Out of date", actionTitle: "Reanalyze",

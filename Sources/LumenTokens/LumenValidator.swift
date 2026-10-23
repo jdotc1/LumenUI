@@ -25,11 +25,12 @@ public struct LumenVisibilityRule: LumenRule {
         // Every backdrop the ground can show over must pass (a floating ground's are unknown).
         let fails = LumenValidator.opaqueGrounds(ground, in: theme, appearance: appearance, registry: registry).contains { b in
             let a = color.over(b)
-            let tooLow = minimumContrast.map { a.contrastRatio(against: b, in: space) < $0 } ?? false
+            let tooLow = minimumContrast.map { LumenValidator.measuredContrast(color, on: [b], space: space) < $0 } ?? false
             let tooClose = minimumDistance.map { a.perceptualDistance(to: b, in: space) < $0 } ?? false
             return tooLow || tooClose
         }
-        return fails ? [LumenIssue(severity, appearance, token: token, message)] : []
+        return fails ? [LumenIssue(severity, appearance, token: token, message,
+            fix: .visibility(token: token, ground: ground, minimumContrast: minimumContrast, minimumDistance: minimumDistance))] : []
     }
 }
 
@@ -135,7 +136,7 @@ public enum LumenValidator {
             let hasContrastPalette = (isDark ? theme.darkHighContrast : theme.lightHighContrast) != nil
             return ([false] + (hasContrastPalette ? [true] : [])).map { LumenAppearance(isDark: isDark, isHighContrast: $0) }
         }
-        var found = unknownKeyIssues(in: theme, registry: registry)
+        var found = unknownKeyIssues(in: theme, registry: registry) + metricIssues(in: theme, registry: registry)
         let raised = Set(registry.raisedTokens)
         let pairs = registry.specs.flatMap { spec in spec.contrast.map { (foreground: spec.token, contrast: $0) } }
             + registry.rules.compactMap { $0 as? LumenContrastPairsRule }.flatMap(\.pairs)
@@ -164,6 +165,69 @@ public enum LumenValidator {
         return found
     }
 
+    /// Metric issues are appearance-independent and reported once. Pass a flattened theme to
+    /// include inherited values, just as for palette validation. The 12 pt radius limit is half
+    /// the smallest 24 pt control; scaling type never permits smaller control or hit-target boxes.
+    public static func metricIssues(in theme: LumenTheme, registry: LumenRegistry) -> [LumenIssue] {
+        guard let metrics = theme.metrics else { return [] }
+        let appearance: LumenAppearance = theme.forcedAppearanceIsDark == true ? .dark : .light
+        var found: [LumenIssue] = []
+        func issue(_ message: String, fix: LumenThemeFix? = nil) {
+            if let fix { found.append(LumenIssue(.error, appearance, token: nil, message, fix: fix)) }
+            else { found.append(LumenIssue(.error, appearance, token: nil, message)) }
+        }
+        if let scale = metrics.typeScale, !scale.isFinite || !(0.9...1.3).contains(scale) {
+            issue("metrics.typeScale must be finite and between 0.9 and 1.3",
+                  fix: .metric(key: .typeScale, minimum: 0.9, maximum: 1.3))
+        }
+        if let scale = metrics.spacingScale, !scale.isFinite || !(1.0...1.25).contains(scale) {
+            issue("metrics.spacingScale must be finite and between 1.0 and 1.25",
+                  fix: .metric(key: .spacingScale, minimum: 1.0, maximum: 1.25))
+        }
+        if case .uniform(let radius)? = metrics.radiusProfile, !radius.isFinite || !(0.0...12.0).contains(radius) {
+            issue("metrics.radiusProfile must be finite and between 0 and 12 pt (half the smallest 24 pt control height)",
+                  fix: .metric(key: .radiusProfile, minimum: 0, maximum: 12))
+        }
+        if let declared = metrics.depth {
+            let depth = LumenDepth.resolving(declared)
+            func opacity(_ value: Double, _ path: String) {
+                if !value.isFinite || !(0...0.6).contains(value) {
+                    issue("metrics.depth.\(path) must be finite and between 0 and 0.6")
+                }
+            }
+            func geometry(radius: Double, y: Double, path: String) {
+                if !radius.isFinite || !(0...32).contains(radius) {
+                    issue("metrics.depth.\(path).radius must be finite and between 0 and 32 pt")
+                }
+                if !y.isFinite || y < 0 || (radius.isFinite && y > radius) {
+                    issue("metrics.depth.\(path).y must be finite and between 0 and its radius")
+                }
+            }
+            for (path, shadow) in [("menu", depth.menu), ("popover", depth.popover)] {
+                opacity(shadow.opacity.light, "\(path).opacity.light")
+                opacity(shadow.opacity.dark, "\(path).opacity.dark")
+                geometry(radius: shadow.radius, y: shadow.y, path: path)
+            }
+            for (path, halo) in [("glow.hero", depth.glow.hero), ("glow.selection", depth.glow.selection)] {
+                opacity(halo.opacity, "\(path).opacity")
+                geometry(radius: halo.radius, y: halo.y, path: path)
+            }
+            if depth.popover.opacity.light < depth.menu.opacity.light {
+                issue("metrics.depth.popover.opacity.light must be at least metrics.depth.menu.opacity.light")
+            }
+            if depth.popover.opacity.dark < depth.menu.opacity.dark {
+                issue("metrics.depth.popover.opacity.dark must be at least metrics.depth.menu.opacity.dark")
+            }
+            if depth.popover.radius < depth.menu.radius {
+                issue("metrics.depth.popover.radius must be at least metrics.depth.menu.radius")
+            }
+        }
+        for key in metrics.keys.intersection(registry.lockedMetrics).sorted(by: { $0.rawValue < $1.rawValue }) {
+            issue("metrics.\(key.rawValue) is locked by this app's packs and cannot be set by a theme")
+        }
+        return found
+    }
+
     /// The finding for a foreground and requirement as drawn on a raised ground (a keycap in a card
     /// takes `bg.insetRaised`), or `nil` when it passes there, draws the same as on the canvas, or a
     /// requirement on the raised role itself already covers it.
@@ -179,10 +243,11 @@ public enum LumenValidator {
         let plainGrounds = opaqueGrounds(requirement.ground, in: theme, appearance: appearance, registry: registry)
         let grounds = opaqueGrounds(requirement.ground, in: theme, appearance: appearance, registry: registry, resolution: resolution)
         guard ink != plainInk || grounds != plainGrounds else { return nil }
-        let ratio = grounds.map { ink.over($0).contrastRatio(against: $0, in: theme.colorSpace) }.min() ?? 21
+        let ratio = measuredContrast(ink, on: grounds, space: theme.colorSpace)
         guard ratio < requirement.minimum else { return nil }
         return LumenIssue(requirement.severity, appearance, token: foreground,
-                          "\(foreground.rawValue) on \(requirement.ground.rawValue) on a raised ground is \(format(ratio)):1; needs \(needed(requirement)):1")
+                          "\(foreground.rawValue) on \(requirement.ground.rawValue) on a raised ground is \(format(ratio)):1; needs \(needed(requirement)):1",
+                          fix: .contrast(foreground: foreground, ground: requirement.ground, minimum: requirement.minimum, raised: true))
     }
 
     private static func needed(_ requirement: LumenContrast) -> String {
@@ -250,7 +315,7 @@ public enum LumenValidator {
         let alpha = theme.color(foreground, for: appearance, in: registry).alpha
         guard alpha < 1 else { return nil }
         return LumenIssue(.error, appearance, token: foreground,
-                          "\(foreground.rawValue) must be opaque (it is \(Int((alpha * 100).rounded()))%): contrast can't be established for translucent text")
+                          "\(foreground.rawValue) must be opaque (it is \(Int((alpha * 100).rounded()))%): contrast can't be established for translucent text", fix: .opacity(token: foreground))
     }
 
     /// The finding for one foreground and requirement, or `nil` when it passes. A translucent
@@ -259,11 +324,12 @@ public enum LumenValidator {
     public static func contrastIssue(_ foreground: LumenToken, _ requirement: LumenContrast, in theme: LumenTheme,
                                      appearance: LumenAppearance, registry: LumenRegistry) -> LumenIssue? {
         let ink = theme.color(foreground, for: appearance, in: registry)
-        let ratio = opaqueGrounds(requirement.ground, in: theme, appearance: appearance, registry: registry)
-            .map { ink.over($0).contrastRatio(against: $0, in: theme.colorSpace) }.min() ?? 21
+        let ratio = measuredContrast(ink, on: opaqueGrounds(requirement.ground, in: theme, appearance: appearance, registry: registry),
+                                     space: theme.colorSpace)
         guard ratio < requirement.minimum else { return nil }
         return LumenIssue(requirement.severity, appearance, token: foreground,
-                          "\(foreground.rawValue) on \(requirement.ground.rawValue) is \(format(ratio)):1; needs \(needed(requirement)):1")
+                          "\(foreground.rawValue) on \(requirement.ground.rawValue) is \(format(ratio)):1; needs \(needed(requirement)):1",
+                          fix: .contrast(foreground: foreground, ground: requirement.ground, minimum: requirement.minimum))
     }
 
     /// What a translucent ground is drawn over.

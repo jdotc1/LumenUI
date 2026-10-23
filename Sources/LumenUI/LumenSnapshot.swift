@@ -88,7 +88,8 @@ public enum LumenSnapshot {
     /// The view rendered to PNG at `scale`, on the theme's canvas, or `nil` when rendering fails.
     /// - Parameters:
     ///   - themes: extra themes (user or example themes) the variant may name.
-    ///   - metrics: the app's metrics, applied as `.lumenMetrics(_:)` would.
+    ///   - metrics: custom app metrics. The default uses the theme; apply `.lumenMetrics(.standard)`
+    ///     to the view to explicitly override a theme with the standard app metrics.
     public static func png<Content: View>(of view: Content, size: CGSize, variant: Variant, registry: LumenRegistry,
                                           themes: [LumenTheme] = [], metrics: LumenMetrics = .standard,
                                           scale: CGFloat = 2) -> Data? {
@@ -142,7 +143,8 @@ public enum LumenSnapshot {
             .environment(\.colorScheme, colorScheme)
             .environment(\.lumenPalette, palette)
             .environment(\.lumenStore, store)
-            .environment(\.lumenMetrics, metrics)
+            .environment(\.lumenThemeMetrics, store.resolvedMetrics())
+            .environment(\.lumenAppMetrics, metrics == .standard ? nil : metrics)
             .environment(\.lumenRendersOffscreen, true)
             .tint(palette[.accent])   // as `.lumenPaletteRoot()` tints a real window's native controls
         let renderer = ImageRenderer(content: content)
@@ -171,7 +173,8 @@ public enum LumenSnapshot {
             .environment(\.colorScheme, colorScheme)
             .environment(\.lumenPalette, palette)
             .environment(\.lumenStore, store)
-            .environment(\.lumenMetrics, metrics)
+            .environment(\.lumenThemeMetrics, store.resolvedMetrics())
+            .environment(\.lumenAppMetrics, metrics == .standard ? nil : metrics)
             .environment(\.lumenRendersOffscreen, false)
             // Round layout to the capture's pixel grid, not the display's.
             .environment(\.displayScale, scale)

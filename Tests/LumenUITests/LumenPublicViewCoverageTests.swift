@@ -97,7 +97,8 @@ final class LumenPublicViewCoverageTests: XCTestCase {
         let views = try Self.publicViews()
         XCTAssertGreaterThan(views.count, 20, "the scan found too few public views")
         var exercised = try Self.swiftFiles(in: "Sources/LumenCatalog").map { try String(contentsOf: $0, encoding: .utf8) }
-        exercised.append(try String(contentsOf: Self.root.appending(path: "Tests/LumenUITests/LumenGoldenTests.swift"), encoding: .utf8))
+        exercised += try Self.swiftFiles(in: "Tests/LumenUITests").filter { $0.lastPathComponent.hasSuffix("GoldenTests.swift") }
+            .map { try String(contentsOf: $0, encoding: .utf8) }
         let corpus = Self.code(exercised.joined(separator: "\n"))
         let missing = views.filter { name in
             if let container = Self.shownInside[name] { return !Self.instantiates(container, in: corpus) }

@@ -13,6 +13,7 @@ public enum LumenElevation: Sendable {
 private struct LumenElevationShadow: ViewModifier {
     let elevation: LumenElevation
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.lumenMetrics) private var metrics
 
     func body(content: Content) -> some View {
         let dark = colorScheme == .dark
@@ -20,8 +21,10 @@ private struct LumenElevationShadow: ViewModifier {
         // every keycap, chip and swatch inside the surface carried a soft gray halo.
         let surface = content.compositingGroup()
         switch elevation {
-        case .menu: surface.shadow(color: .black.opacity(dark ? 0.40 : 0.12), radius: 10, y: 4)
-        case .popover: surface.shadow(color: .black.opacity(dark ? 0.45 : 0.14), radius: 16, y: 6)
+        case .menu: surface.shadow(color: .black.opacity(dark ? metrics.depth.menu.opacity.dark : metrics.depth.menu.opacity.light),
+                                   radius: metrics.depth.menu.radius, y: metrics.depth.menu.y)
+        case .popover: surface.shadow(color: .black.opacity(dark ? metrics.depth.popover.opacity.dark : metrics.depth.popover.opacity.light),
+                                      radius: metrics.depth.popover.radius, y: metrics.depth.popover.y)
         }
     }
 }
@@ -46,10 +49,22 @@ public enum LumenGlow: Sendable {
 public extension View {
     /// Lights `color` softly behind the view.
     func lumenGlow(_ glow: LumenGlow, color: Color) -> some View {
+        modifier(LumenGlowShadow(glow: glow, color: color))
+    }
+}
+
+private struct LumenGlowShadow: ViewModifier {
+    let glow: LumenGlow
+    let color: Color
+    @Environment(\.lumenMetrics) private var metrics
+
+    func body(content: Content) -> some View {
         // Composited first, so the light falls behind the whole mark, not around each layer in it.
         switch glow {
-        case .hero: compositingGroup().shadow(color: color.opacity(0.4), radius: 20, y: 4)
-        case .selection: compositingGroup().shadow(color: color.opacity(0.45), radius: 8)
+        case .hero: content.compositingGroup().shadow(color: color.opacity(metrics.depth.glow.hero.opacity),
+                                                      radius: metrics.depth.glow.hero.radius, y: metrics.depth.glow.hero.y)
+        case .selection: content.compositingGroup().shadow(color: color.opacity(metrics.depth.glow.selection.opacity),
+                                                           radius: metrics.depth.glow.selection.radius, y: metrics.depth.glow.selection.y)
         }
     }
 }

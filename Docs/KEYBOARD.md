@@ -64,6 +64,7 @@ system and standard app shortcuts (⌘Q, ⌘W, ⌘H, ⌥⌘H, ⌘M, ⌘,, ⌘N, 
 | ⇧⌘[ / ⇧⌘] | Select Previous/Next Tab (wrap) | Safari, Xcode |
 | ⌘1…⌘9 | Sidebar panes | Xcode's navigators |
 | ⌘K | Command Palette | Many editors and Mac apps' quick command bars |
+| ⌘/ | Keyboard Shortcuts | Help menu keyboard reference |
 
 ⌘K adds a link in text editors (Pages, Mail, Notes); such an app gives the palette another
 shortcut. ⌘1…⌘9 clash with apps that use them for tabs or view modes (Safari, Finder). Such an app passes
@@ -139,3 +140,17 @@ On top of the existing text and graphic contrast checks, the validator checks:
 A test holds glyphs' full-strength marks at 3:1 against their tint layer, in text colors and in
 every tile hue in every theme. Inside tiles the tint deepens the hue under white glyphs (and
 lightens it under dark ones), because a lightening tint cut white marks to about 2.2:1.
+
+## Generated keyboard reference
+
+`LumenShortcutsCommands()` owns Help › Keyboard Shortcuts (⌘/). Install it once, then attach
+`.lumenShortcutsSheet(groups:)` to each window participating in the command. It opens that
+window's searchable `LumenShortcutsSheet`; search matches command titles and retains their
+group headings. The standalone view also works in a utility window.
+
+`LumenViewCommands.shortcutGroups` exposes View and Window shortcuts from the definitions
+used to install the menus, including customized shortcuts and omitted commands.
+`shortcutGroups(panes:)` includes the window's named pane commands. Apps append their own
+`LumenShortcutGroup` values, sharing the `LumenShortcut` definitions with their menu bindings,
+and `LumenShortcutsCommands.shortcutGroups` for Help. The Catalog uses its real menu and
+toolbar definitions; its root adds no competing ⌘/ registration.

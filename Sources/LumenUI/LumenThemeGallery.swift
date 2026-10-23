@@ -14,6 +14,7 @@ public struct LumenThemeGallery: View {
     var store: LumenThemeStore { explicitStore ?? environmentStore }
     @State private var editingBase: LumenTheme?
     @State private var isImporting = false
+    @State private var isSeeding = false
     @State private var exporting: LumenThemeFile?
     @State private var trashCandidate: LumenTheme?
     @State private var libraryError: String?
@@ -91,6 +92,7 @@ public struct LumenThemeGallery: View {
                     editingBase = window
                 }
                 .accessibilityIdentifier("lumen.theme.customize")
+                Button("New from seed…", systemImage: "sparkles") { isSeeding = true }
                 Button("Import Theme…", systemImage: "square.and.arrow.down") {
                     isImporting = true
                 }
@@ -120,6 +122,7 @@ public struct LumenThemeGallery: View {
             .font(metrics.typography.callout)
         }
         .accessibilityIdentifier("lumen.theme.gallery")
+        .sheet(isPresented: $isSeeding) { LumenThemeSeedSheet(store: store) }
         .sheet(item: $editingBase) { base in
             LumenThemeEditor(base: base, store: store)
         }
@@ -535,10 +538,11 @@ public struct LumenThemeMiniature: View {
                     .padding(.horizontal, 4)
                     .frame(height: 9)
                     .background(c(.bgInset), in: .rect(cornerRadius: 2))
-                line(.fgOnAccent, width: 16, height: 2.5, opacity: 1)
+                line(.accentFilledForeground, width: 16, height: 2.5, opacity: 1)
                     .padding(.horizontal, 4)
                     .frame(height: 9)
-                    .background(c(.accent), in: .rect(cornerRadius: 2))
+                    .background(c(.accentFilled), in: .rect(cornerRadius: 2))
+                    .overlay { RoundedRectangle(cornerRadius: 3).stroke(c(.borderFocus), lineWidth: 1).padding(-2) }
             }
         }
         .padding(6)

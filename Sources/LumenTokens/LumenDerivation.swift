@@ -44,6 +44,17 @@ public extension LumenRegistry {
         return tokens.filter { following.contains($0) || reaches(following, from: $0) }
     }
 
+    /// Colored seed roles, including explicit aliases and links. Contrast inks deliberately
+    /// remain neutral so they can read on a colored fill.
+    internal var seedAccentTokens: [LumenToken] {
+        let inks: Set<LumenToken> = [.fgOnAccent, .menuHighlightForeground, .accentFilledForeground, .chipSelectedForeground]
+        let following = Set(systemAccentTokens)
+        return tokens.filter { token in
+            !inks.contains(token) && !reaches(inks, from: token)
+                && (following.contains(token) || token == .fgLink || reaches([.fgLink], from: token))
+        }
+    }
+
     /// Whether `token`'s fallback chain reaches any of `targets`.
     func reaches(_ targets: Set<LumenToken>, from token: LumenToken) -> Bool {
         var seen: Set<LumenToken> = []

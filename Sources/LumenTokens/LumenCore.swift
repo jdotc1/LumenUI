@@ -141,7 +141,7 @@ public enum LumenThemes {
     /// Maximum legibility: pure grounds and strong lines.
     public static let contrast = LumenTheme(
         id: contrastID, name: "Contrast", summary: "Maximum legibility: pure grounds and strong lines.", isHighContrast: true,
-        light: contrastLight, dark: contrastDark
+        light: contrastLight, dark: contrastDark, metrics: LumenThemeMetrics(typeScale: 1.1)
     )
 }
 
@@ -364,7 +364,10 @@ public extension LumenPack {
                             let onKeycap = ink.over(keycap).contrastRatio(against: keycap, in: theme.colorSpace)
                             return [(dimmed, "at 82%"), (onKeycap, "on a keycap")].compactMap { ratio, how in
                                 ratio >= 4.5 ? nil : LumenIssue(.error, appearance, token: text,
-                                    "\(text.rawValue) \(how) on \(fill.rawValue) is \(LumenValidator.format(ratio)):1; needs 4.5:1")
+                                    "\(text.rawValue) \(how) on \(fill.rawValue) is \(LumenValidator.format(ratio)):1; needs 4.5:1",
+                                    fix: .contrast(foreground: text, ground: fill, minimum: 4.5,
+                                                   foregroundOpacity: how == "at 82%" ? 0.82 : 1,
+                                                   groundOverlayOpacity: how == "on a keycap" ? 0.18 : 0))
                             }
                         }
                 },
@@ -375,7 +378,8 @@ public extension LumenPack {
                         let groundColor = theme.color(ground, for: appearance, in: registry)
                         let ratio = glyph.composited(alpha: 0.45, over: groundColor).contrastRatio(against: groundColor, in: theme.colorSpace)
                         return ratio >= 2 ? nil : LumenIssue(.error, appearance, token: .toolbarForeground,
-                                                             "Disabled toolbar buttons on \(ground.rawValue) are \(LumenValidator.format(ratio)):1; need 2:1")
+                                                             "Disabled toolbar buttons on \(ground.rawValue) are \(LumenValidator.format(ratio)):1; need 2:1",
+                                                             fix: .contrast(foreground: .toolbarForeground, ground: ground, minimum: 2, foregroundOpacity: 0.45))
                     }
                 },
             ]

@@ -21,6 +21,9 @@ public enum LumenShortcuts {
     /// The command palette. Text editors where ⌘K adds a link (Pages, Mail, Notes) choose another.
     public static let commandPalette = KeyboardShortcut("k", modifiers: .command)
 
+    /// Help › Keyboard Shortcuts. Installed once by `LumenShortcutsCommands`.
+    public static let keyboardShortcuts = KeyboardShortcut("/", modifiers: .command)
+
     /// Sidebar panes 1…9 (⌘1…⌘9), as Xcode's navigators.
     public static func pane(_ number: Int) -> KeyboardShortcut? {
         (1...9).contains(number) ? KeyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command) : nil
@@ -29,7 +32,8 @@ public enum LumenShortcuts {
     /// Lumen's fixed shortcuts with what they do.
     public static let all: [(title: String, shortcut: KeyboardShortcut)] =
         [("Show/Hide Navigator", navigator), ("Show/Hide Panel", panel), ("Show/Hide Inspector", inspector),
-         ("Select Previous Tab", previousTab), ("Select Next Tab", nextTab), ("Command Palette", commandPalette)]
+         ("Select Previous Tab", previousTab), ("Select Next Tab", nextTab), ("Command Palette", commandPalette),
+         ("Keyboard Shortcuts", keyboardShortcuts)]
         + (1...9).map { ("Sidebar Pane \($0)", pane($0)!) }
 
     /// Shortcuts macOS takes before any app sees them (screenshots, app switching, Spotlight, Force
@@ -185,58 +189,109 @@ public struct LumenViewCommands: Commands {
         self.sidebarFallback = sidebarFallback
     }
 
+    /// The configured View and Window shortcuts, generated from the definitions used by the menus.
+    /// Panel titles describe both states; a command without an assigned shortcut is omitted.
+    public var shortcutGroups: [LumenShortcutGroup] { shortcutGroups(panes: []) }
+
+    /// Adds the focused window's visible pane titles in their displayed order (⌘1…⌘9).
+    public func shortcutGroups(panes: [String]) -> [LumenShortcutGroup] {
+        let definitions = commandDefinitions + panes.enumerated().map { index, title in
+            Self.paneDefinition(title: title, index: index)
+        }
+        return ["View", "Window"].compactMap { title in
+            let entries = definitions.filter { $0.group == title }.compactMap { definition in
+                definition.shortcut.map { LumenShortcut(id: definition.id, title: definition.title, shortcut: $0) }
+            }
+            return entries.isEmpty ? nil : LumenShortcutGroup(id: title, title: title, shortcuts: entries)
+        }
+    }
+
+    private static func paneDefinition(title: String, index: Int) -> LumenViewCommandDefinition {
+        .init(id: "pane-\(index)", group: "View", title: "Show \(title)", shortcut: LumenShortcuts.pane(index + 1))
+    }
+
+    var commandDefinitions: [LumenViewCommandDefinition] {
+        var result: [LumenViewCommandDefinition] = []
+        if includesCommandPalette { result.append(definition(.palette)) }
+        result += [definition(.navigator), definition(.panel), definition(.inspector)]
+        if includesTabNavigation { result += [definition(.previousTab), definition(.nextTab)] }
+        return result
+    }
+
+    private func definition(_ kind: LumenViewCommandKind) -> LumenViewCommandDefinition {
+        switch kind {
+        case .palette: .init(id: kind.rawValue, group: "View", title: "Command Palette…", shortcut: shortcuts.commandPalette)
+        case .navigator: .init(id: kind.rawValue, group: "View", title: "Show/Hide Navigator", shortcut: shortcuts.navigator)
+        case .panel: .init(id: kind.rawValue, group: "View", title: "Show/Hide Panel", shortcut: shortcuts.panel)
+        case .inspector: .init(id: kind.rawValue, group: "View", title: "Show/Hide Inspector", shortcut: shortcuts.inspector)
+        case .previousTab: .init(id: kind.rawValue, group: "Window", title: "Select Previous Tab", shortcut: shortcuts.previousTab)
+        case .nextTab: .init(id: kind.rawValue, group: "Window", title: "Select Next Tab", shortcut: shortcuts.nextTab)
+        }
+    }
+
     public var body: some Commands {
         CommandGroup(before: .toolbar) {
             if includesCommandPalette {
-                Button("Command Palette…") { commandPalette?.wrappedValue.toggle() }
-                    .keyboardShortcut(shortcuts.commandPalette)
+                Button(definition(.palette).title) { commandPalette?.wrappedValue.toggle() }
+                    .keyboardShortcut(definition(.palette).shortcut)
                     .disabled(commandPalette == nil)
                 Divider()
             }
         }
         CommandGroup(replacing: .sidebar) {
             if let leading = panels?.leading {
-                toggle(leading, "Navigator", shortcuts.navigator)
+                toggle(leading, definition(.navigator))
             } else if sidebarFallback {
                 Button("Toggle Sidebar") {
                     NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
                 }
-                .keyboardShortcut(shortcuts.navigator)
+                .keyboardShortcut(definition(.navigator).shortcut)
             }
-            if let bottom = panels?.bottom { toggle(bottom, "Panel", shortcuts.panel) }
-            if let trailing = panels?.trailing { toggle(trailing, "Inspector", shortcuts.inspector) }
+            if let bottom = panels?.bottom { toggle(bottom, definition(.panel)) }
+            if let trailing = panels?.trailing { toggle(trailing, definition(.inspector)) }
             if let panes, !panes.panes.isEmpty {
                 Divider()
                 ForEach(Array(panes.panes.enumerated()), id: \.offset) { index, pane in
-                    Button("Show \(pane.title)") { withAnimation(Self.animation) { panes.select(pane.id) } }
-                        .keyboardShortcut(LumenShortcuts.pane(index + 1))
+                    Button(Self.paneDefinition(title: pane.title, index: index).title) {
+                        withAnimation(Self.animation) { panes.select(pane.id) }
+                    }
+                    .keyboardShortcut(Self.paneDefinition(title: pane.title, index: index).shortcut)
                 }
             }
         }
         CommandGroup(before: .windowArrangement) {
             if includesTabNavigation {
-                Button("Select Previous Tab") { tabs?.previous() }
-                    .keyboardShortcut(shortcuts.previousTab)
+                Button(definition(.previousTab).title) { tabs?.previous() }
+                    .keyboardShortcut(definition(.previousTab).shortcut)
                     .disabled(tabs == nil)
-                Button("Select Next Tab") { tabs?.next() }
-                    .keyboardShortcut(shortcuts.nextTab)
+                Button(definition(.nextTab).title) { tabs?.next() }
+                    .keyboardShortcut(definition(.nextTab).shortcut)
                     .disabled(tabs == nil)
                 Divider()
             }
         }
     }
 
-    private func toggle(_ binding: Binding<Bool>, _ title: String, _ shortcut: KeyboardShortcut?) -> some View {
-        Button(binding.wrappedValue ? "Hide \(title)" : "Show \(title)") {
+    private func toggle(_ binding: Binding<Bool>, _ definition: LumenViewCommandDefinition) -> some View {
+        Button(definition.title.replacingOccurrences(of: "Show/Hide", with: binding.wrappedValue ? "Hide" : "Show")) {
             withAnimation(Self.animation) { binding.wrappedValue.toggle() }
         }
-        .keyboardShortcut(shortcut)
+        .keyboardShortcut(definition.shortcut)
     }
 
     /// Commands live outside the view tree, so they read Reduce Motion from the system: none then.
     @MainActor private static var animation: Animation? {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .snappy
     }
+}
+
+enum LumenViewCommandKind: String { case palette, navigator, panel, inspector, previousTab, nextTab }
+
+struct LumenViewCommandDefinition {
+    let id: String
+    let group: String
+    let title: String
+    let shortcut: KeyboardShortcut?
 }
 
 // MARK: Selection groups

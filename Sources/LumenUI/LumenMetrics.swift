@@ -1,6 +1,7 @@
 import SwiftUI
+import LumenTokens
 
-/// An app's sizes, type, corners and motion. Colors vary by theme; metrics vary by app: one app
+/// An app's sizes, type, corners, motion and depth. Themes may supply metrics; app overrides win. One app
 /// uses system fonts on a 4 pt grid, another a document face with 5 pt corners.
 ///
 /// Every LumenUI component, the gallery, the editor and density read metrics from
@@ -111,6 +112,8 @@ public struct LumenMetrics: Sendable, Equatable {
     public struct Motion: Sendable, Equatable {
         /// Changing a duration retimes its curves, so the two never disagree (set a curve afterwards to
         /// give it a different shape).
+        public var isEnabled: Bool = true
+
         public var fast: Double { didSet { fastCurve = .easeInOut(duration: fast) } }
         public var standard: Double {
             didSet {
@@ -140,7 +143,7 @@ public struct LumenMetrics: Sendable, Equatable {
         /// `base`, or no animation at all when Reduce Motion is on: the change happens at once.
         /// (A shorter linear animation would still move things, which Reduce Motion asks not to.)
         public func animation(_ base: Animation, reduceMotion: Bool) -> Animation? {
-            reduceMotion ? nil : base
+            reduceMotion || !isEnabled ? nil : base
         }
     }
 
@@ -267,6 +270,8 @@ public struct LumenMetrics: Sendable, Equatable {
     public var typography: Typography
     public var motion: Motion
     public var layout: Layout
+    /// Shadow and glow values; an explicit app override replaces the theme's depth too.
+    public var depth: LumenDepth = .standard
     public var iconSize: IconSize
 
     public init(spacing: Spacing = .standard, radius: Radius = .standard, stroke: Stroke = .standard,
@@ -281,13 +286,78 @@ public struct LumenMetrics: Sendable, Equatable {
         self.iconSize = iconSize
     }
 
+    /// Creates app metrics with explicit depth, preserving the original initializer.
+    public init(spacing: Spacing = .standard, radius: Radius = .standard, stroke: Stroke = .standard,
+                typography: Typography = .standard, motion: Motion = .standard, layout: Layout = .standard,
+                iconSize: IconSize = .standard, depth: LumenDepth) {
+        self.init(spacing: spacing, radius: radius, stroke: stroke, typography: typography,
+                  motion: motion, layout: layout, iconSize: iconSize)
+        self.depth = depth
+    }
+
+    /// Resolves validated theme values over the standard app metrics. Missing values retain the
+    /// shipped defaults. An explicit app environment override replaces this entire value.
+    public static func resolving(_ theme: LumenThemeMetrics?) -> LumenMetrics {
+        guard let theme else { return .standard }
+        var result = LumenMetrics.standard
+        result.depth = LumenDepth.resolving(theme.depth)
+        if let profile = theme.radiusProfile {
+            switch profile {
+            case .standard: result.radius = Radius(xs: 4, sm: 6, md: 8, lg: 10, xl: 12, pill: 12)
+            case .rounded: result.radius = Radius(xs: 6, sm: 8, md: 10, lg: 12, xl: 12, pill: 12)
+            case .uniform(let value):
+                result.radius = Radius(xs: value, sm: value, md: value, lg: value, xl: value, pill: value)
+            }
+        }
+        if let scale = theme.spacingScale, scale != 1 {
+            for path in [\Spacing.s0, \.s1, \.s2, \.s3, \.s4, \.s5, \.s6, \.s7, \.s8, \.s9, \.s10, \.s11] {
+                result.spacing[keyPath: path] *= scale
+            }
+        }
+        if let scale = theme.typeScale, scale != 1 {
+            for path in [\Typography.title2, \.title3, \.headline, \.body, \.bodyEmphasized, \.callout,
+                         \.subheadline, \.footnote, \.caption, \.captionEmphasized, \.sectionLabel,
+                         \.monoCaption, \.monoSmall, \.display, \.stat] {
+                result.typography[keyPath: path] = result.typography[keyPath: path].scaled(by: scale)
+            }
+            result.typography.sectionLabelTracking *= scale
+            // Never shrink boxes or hit targets. Grow text-bearing heights with larger type so
+            // the 24 pt control is a floor, rather than a clipping boundary (PRINCIPLES §6).
+            let growth = max(1, scale)
+            for path in [\Layout.controlHeight, \.minimumHitTarget, \.rowHeightCompact, \.rowHeightRegular,
+                         \.rowHeightComfortable, \.detailedRowHeightCompact, \.detailedRowHeightRegular,
+                         \.detailedRowHeightComfortable, \.statusBarHeight, \.tabHeight, \.paneHeaderHeight,
+                         \.subheaderHeight, \.paletteQueryHeight] {
+                result.layout[keyPath: path] *= growth
+            }
+        }
+        switch theme.motion {
+        case .reduced:
+            result.motion = Motion(fast: 0.07, standard: 0.11, emphasized: 0.16)
+            result.motion.standardCurve = .easeInOut(duration: 0.11)
+            result.motion.emphasizedCurve = .easeInOut(duration: 0.16)
+        case .none?:
+            result.motion = Motion(fast: 0, standard: 0, emphasized: 0)
+            result.motion.isEnabled = false
+        case .standard, nil: break
+        }
+        return result
+    }
+
     /// Lumen's default values: system fonts, a 4 pt spacing grid, 4/6/8/10/14 corners.
     public static let standard = LumenMetrics()
 }
 
 extension EnvironmentValues {
-    /// The app's metrics. Set with `.lumenMetrics(_:)`; `standard` otherwise.
-    @Entry public var lumenMetrics: LumenMetrics = .standard
+    @Entry var lumenThemeMetrics: LumenMetrics = .standard
+    @Entry var lumenAppMetrics: LumenMetrics? = nil
+
+    /// Explicit app metrics win over the palette root's theme, including an explicit `.standard`.
+    /// Keeping the two sources separate makes overrides independent of modifier order.
+    public var lumenMetrics: LumenMetrics {
+        get { lumenAppMetrics ?? lumenThemeMetrics }
+        set { lumenAppMetrics = newValue }
+    }
 }
 
 extension View {

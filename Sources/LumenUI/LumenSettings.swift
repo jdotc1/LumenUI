@@ -351,7 +351,7 @@ public struct LumenSettingsSidebarView: View {
             List(shown, selection: categorySelection) { category in
                 Label {
                     VStack(alignment: .leading, spacing: metrics.spacing.s1) {
-                        Text(category.title).font(metrics.typography.body)
+                        LumenSidebarTitle(category.title, font: metrics.typography.body, isSelected: selection == category.id)
                         let found = category.matchingSettings(query)
                         if !found.isEmpty {
                             Text(found.joined(separator: " · ")).font(metrics.typography.caption)
@@ -364,7 +364,7 @@ public struct LumenSettingsSidebarView: View {
                 }
                 .foregroundStyle(palette[.sidebarForeground])
                 .listRowBackground(
-                    RoundedRectangle(cornerRadius: metrics.radius.sm)
+                    RoundedRectangle(cornerRadius: metrics.radius.sm, style: .continuous)
                         .fill(selection == category.id
                               ? palette[activeState == .inactive ? .sidebarRowSelectedInactive : .sidebarRowSelected]
                               : .clear)

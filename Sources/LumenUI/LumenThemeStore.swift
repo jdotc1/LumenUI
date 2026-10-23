@@ -85,6 +85,8 @@ public final class LumenThemeStore: Sendable {
         var reservedIDs: Set<String> = []
         /// Counts reloads; part of the palette key so in-place edits invalidate cached palettes.
         var revision = 0
+        /// A scoped editor draft; never persisted or offered in the gallery.
+        var editorPreview: LumenTheme?
         /// The window always has an entry; a surface without one follows the window.
         var selections: [LumenSurface: String]
         /// Accent-family roles follow the macOS accent color instead of the theme.
@@ -99,6 +101,7 @@ public final class LumenThemeStore: Sendable {
             if surface != .window, let id = selections[surface], let theme = themes.first(where: { $0.id == id }) {
                 return theme
             }
+            if let editorPreview { return editorPreview }
             return selections[.window].flatMap { id in themes.first { $0.id == id } } ?? fallback
         }
     }
@@ -130,6 +133,7 @@ public final class LumenThemeStore: Sendable {
     @ObservationIgnored public let defaultThemeID: String
     /// The themes offered besides those in the folder: the registry's gallery themes, or the
     /// `themes` passed to `init`.
+    @ObservationIgnored let baseThemeProblems: [LumenThemeFileProblem]
     @ObservationIgnored let baseThemes: [LumenTheme]
     @ObservationIgnored let fallbackTheme: LumenTheme
     /// Tokens drawn from the macOS accent while the store follows it (`LumenRegistry.systemAccentTokens`).
@@ -157,13 +161,17 @@ public final class LumenThemeStore: Sendable {
     public init(registry: LumenRegistry, configuration: LumenStoreConfiguration, themes: [LumenTheme]? = nil,
                 persistsSelection: Bool = true) {
         let directory = configuration.resolvedThemesDirectory
-        let base = themes ?? registry.galleryThemes
+        let baseLibrary = LumenThemeLibrary.resolvingInheritance((themes ?? registry.galleryThemes).map { ($0, nil) }, registry: registry)
+        let base = baseLibrary.themes
         let library = themes == nil ? LumenThemeLibrary.load(from: directory, registry: registry) : nil
         let available = base + (library?.themes ?? []).filter { theme in !base.contains { $0.id == theme.id } }
 
         let preferred = configuration.defaultThemeID ?? registry.defaultThemeID
         let defaultID = available.contains { $0.id == preferred } ? preferred : (available.first?.id ?? preferred)
-        let fallback = available.first { $0.id == defaultID } ?? registry.theme(id: registry.defaultThemeID) ?? LumenThemes.standard
+        let registryDefault = registry.theme(id: registry.defaultThemeID).flatMap { theme in
+            LumenValidator.metricIssues(in: theme, registry: registry).isEmpty ? theme : nil
+        }
+        let fallback = available.first { $0.id == defaultID } ?? registryDefault ?? LumenThemes.standard
 
         // A store that doesn't persist never reads the user's choice. A saved choice whose theme
         // doesn't load right now (a file mid-edit at launch) is kept, as a reload keeps it: it
@@ -177,7 +185,7 @@ public final class LumenThemeStore: Sendable {
         }
         var initial = State(themes: available, selections: selections)
         initial.userThemeFiles = library?.files ?? [:]
-        initial.themeFileProblems = library?.problems ?? []
+        initial.themeFileProblems = baseLibrary.problems + (library?.problems ?? [])
         initial.reservedIDs = library?.reservedIDs ?? []
         initial.usesSystemAccent = defaults?.bool(forKey: configuration.systemAccentDefaultsKey) ?? false
 
@@ -187,6 +195,7 @@ public final class LumenThemeStore: Sendable {
         self.themesDirectory = directory
         self.defaultThemeID = defaultID
         self.baseThemes = base
+        self.baseThemeProblems = baseLibrary.problems
         self.fallbackTheme = fallback
         self.systemAccentTokens = Set(registry.systemAccentTokens)
         self.raisedTokens = registry.raisedTokens
@@ -280,6 +289,12 @@ public final class LumenThemeStore: Sendable {
         return state.withLock { $0.userThemeFiles[id] }
     }
 
+    /// The selected window theme's metrics. Each scoped store resolves independently; views can
+    /// replace these with `.lumenMetrics(_:)` at either side of the palette root.
+    public func resolvedMetrics() -> LumenMetrics {
+        LumenMetrics.resolving(theme(for: .window).metrics)
+    }
+
     /// A SwiftUI color for `token`. It adapts to Light, Dark and Increase Contrast on its own,
     /// and records an Observation dependency on the selection.
     public func color(_ token: LumenToken) -> Color {
@@ -319,7 +334,7 @@ public final class LumenThemeStore: Sendable {
         access(keyPath: \.paletteKey)
         let (theme, systemAccent) = state.withLock { state in
             (state.theme(for: surface ?? registry.surface(of: token), fallback: fallbackTheme),
-             state.usesSystemAccent && systemAccentTokens.contains(token))
+             state.usesSystemAccent && state.editorPreview == nil && systemAccentTokens.contains(token))
         }
         guard systemAccent, let accent = Self.systemAccent(in: appearance) else {
             return theme.color(token, for: appearance, in: registry)
@@ -341,7 +356,7 @@ public final class LumenThemeStore: Sendable {
     func entry(_ token: LumenToken, in state: inout State, on surface: LumenSurface? = nil, raised: Bool = false) -> CachedColor {
         if registry.spec(for: token) == nil { state.unknownTokens.insert(token) }
         let theme = state.theme(for: surface ?? registry.surface(of: token), fallback: fallbackTheme)
-        let systemAccent = state.usesSystemAccent && systemAccentTokens.contains(token)
+        let systemAccent = state.usesSystemAccent && state.editorPreview == nil && systemAccentTokens.contains(token)
         let key = CacheKey(themeID: theme.id, token: token, systemAccent: systemAccent, raised: raised && !systemAccent)
         if let cached = state.colorCache[key] { return cached }
         let registry = registry
@@ -406,6 +421,19 @@ public final class LumenThemeStore: Sendable {
 
 
     // MARK: Mutations
+
+    /// Applies or ends the editor's live preview without changing saved selections.
+    func setEditorPreview(_ theme: LumenTheme?) {
+        withMutation(keyPath: \.paletteKey) {
+            state.withLock { state in
+                state.editorPreview = theme
+                state.revision += 1
+                state.colorCache.removeAll()
+                state.palettes.removeAll()
+            }
+        }
+        postDidChange()
+    }
 
     /// Chooses the theme for `surface`. `nil` makes a non-window surface follow the window; the
     /// window always has a theme, so `nil` is ignored there, as are unknown ids and surfaces the
@@ -474,7 +502,7 @@ public final class LumenThemeStore: Sendable {
                 state.withLock { state in
                     state.themes = reloaded
                     state.userThemeFiles = library.files
-                    state.themeFileProblems = library.problems
+                    state.themeFileProblems = baseThemeProblems + library.problems
                     state.reservedIDs = library.reservedIDs
                     state.revision += 1
                     state.colorCache.removeAll()

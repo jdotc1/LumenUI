@@ -4,12 +4,24 @@ public struct LumenIssue: Hashable, Identifiable, Sendable {
     public let appearance: LumenAppearance
     public let token: LumenToken?
     public let message: String
+    /// A structured, atomic repair, or nil when the rule needs a manual decision.
+    public let fix: LumenThemeFix?
 
     public init(_ severity: LumenSeverity, _ appearance: LumenAppearance, token: LumenToken?, _ message: String) {
         self.severity = severity
         self.appearance = appearance
         self.token = token
         self.message = message
+        fix = nil
+    }
+
+    public init(_ severity: LumenSeverity, _ appearance: LumenAppearance, token: LumenToken?,
+                _ message: String, fix: LumenThemeFix) {
+        self.severity = severity
+        self.appearance = appearance
+        self.token = token
+        self.message = message
+        self.fix = fix
     }
 
     public var id: String { "\(appearance)|\(token?.rawValue ?? "")|\(message)" }
@@ -63,6 +75,9 @@ public struct LumenPack: Sendable {
     /// `graph.edge.*`). Nothing reads them and the validator doesn't flag them, so old files open
     /// quietly. Set it after creating the pack.
     public var retiredKeys: Set<String> = []
+    /// Metrics themes may not set, including through inheritance. Locks are validated rather
+    /// than clamped; apps can still configure their own metrics. Set after creating the pack.
+    public var lockedMetrics: Set<LumenThemeMetrics.Key> = []
 
     public init(id: String, tokens: [LumenTokenSpec] = [], surfaces: [LumenSurface] = [], themes: [LumenTheme] = [],
                 themeValues: [String: LumenThemeValues] = [:], rules: [any LumenRule] = [], hidesThemes: [String] = [],
@@ -95,6 +110,8 @@ public struct LumenRegistry: Sendable {
     public let renamedKeys: [String: LumenToken]
     /// Every pack's retired keys: old theme-file keys with no successor, ignored without a warning.
     public let retiredKeys: Set<String>
+    /// The union of every pack's metric locks.
+    public let lockedMetrics: Set<LumenThemeMetrics.Key>
     private let specsByToken: [LumenToken: LumenTokenSpec]
     private let themesByID: [String: LumenTheme]
 
@@ -148,6 +165,7 @@ public struct LumenRegistry: Sendable {
             }
         }
         retiredKeys = retired
+        lockedMetrics = Set(packs.flatMap(\.lockedMetrics))
         specsByToken = specs
         tokens = order
         // Packs may share a surface (two packs that both draw on the editor): each is listed once.

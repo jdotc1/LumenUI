@@ -13,6 +13,74 @@ Apps pin exact commits; each release names its commit and tag.
 
 ## Unreleased
 
+## 0.59.0 (2026-10-23)
+
+Milestone M2: themes carry metrics and depth, a theme editor that can fix and seed, and design-tool
+exchange.
+
+### Added
+- Theme schema 2 carries optional inherited radius, type scale, spacing scale and motion. Packs
+  can lock individual metrics; invalid or locked values produce validator and import errors.
+- Palette roots resolve metrics per store. Explicit app metrics keep precedence, including
+  standard metrics, independently of modifier order. Exports and the CLI describe and validate
+  the new fields; unchanged v1 library round trips preserve the original bytes exactly.
+- Theme depth metrics declare menu and popover shadows plus hero and selection glows. Every
+  optional field inherits independently; omitted fields retain the original depth constants.
+  Per-store resolution and explicit app metrics keep the same precedence. Schema, reference and
+  CLI validation describe the nested fields; Midnight Deep demonstrates file-driven depth.
+- Theme editor Metrics tab with inherited values, resets, pack locks and live store preview;
+  color, metric and validator Fix edits share native undo and redo. Fix actions repair contrast,
+  foreground opacity and numeric metric bounds atomically, including independent Increase Contrast
+  edits, and keep colored fills chromatic.
+- New from seed derives complete, validated four-appearance themes from a hue (violet by default)
+  and Paper / Graphite or Bright / Deep grounds; the accent keeps its hue and chroma across all
+  appearances, aliases and links. Public token APIs expose seed derivation and Fix metadata.
+  See Docs/reference/theme-editor.md for derivation and persistence rules.
+- DTCG 2025.10 theme export/import and CSS custom-property export in `lumen-theme`, backed by
+  additive `LumenDTCG` and `LumenCSS` APIs in `LumenTokens`. Appearance groups, metric ramps and
+  shadow composites remain editable; a Lumen extension preserves source bytes, sparse declarations
+  and pack locks. Import reports unsupported tokens as warnings and validates the resulting theme.
+  The DTCG reference documents the design-tool loop and its unverified external-tool boundary.
+- `lumen-theme diff` reports per-appearance color changes, added and removed tokens, metrics,
+  depth and affected contrast deltas. `contrast` lists validator contrast requirements with
+  failures first; both offer text, Markdown and JSON reports. Releases prepare a Theme values
+  report under Visual after the strict build and stop before tagging until the report is committed.
+- Window-owned `LumenToastCenter`, `LumenToast` and `.lumenToasts`: three visible notices,
+  older-count collapse, hover-paused dismissal, persistent warning and danger notices, optional
+  bordered actions aligned with the text, and an opaque raised backing in drawn and glass chrome.
+- `LumenShortcut`, `LumenShortcutGroup`, a searchable `LumenShortcutsSheet` hosted by the focused
+  window, and Help › Keyboard Shortcuts (⌘/). `LumenViewCommands` exports groups from the
+  commands it installs.
+- Catalog toast tone and stack controls, and a keyboard reference generated from its own commands.
+
+### Changed
+- `LumenListRow` infers sidebar or content context when `context` is omitted; explicit contexts
+  keep their meaning, and the v0.58.0 initializers remain source compatible.
+
+### Visual
+- Contrast uses typeScale 1.1. Text-bearing controls and row heights grow with larger text while
+  preserving the 24 pt control and hit-target floors. Other built-in themes retain their metrics.
+- Navigation sidebars use semi-bold selected titles in active and inactive windows, reserving
+  their selected width without changing subtitles or counts. Source-list hit areas reach the
+  column edges while their continuous, inset selection shape stays in place; stacked sidebar rows
+  inherit the sidebar selection role. The six `selection-families` goldens were re-recorded for
+  the title.
+- Golden canvases grow vertically for every scaled theme; unscaled captures are unchanged.
+
+#### Theme values
+<!-- lumen-theme-values:start -->
+##### lumen.contrast (changed)
+- [all] metrics.typeScale (added): absent → 1.1
+<!-- lumen-theme-values:end -->
+
+### Validator
+- Packs can lock the entire depth declaration; explicit and inherited depth values are rejected
+  through the existing validator and theme-store refusal paths.
+- Depth opacity must be 0–0.6, radius 0–32 pt and vertical offset 0–radius. Popover opacity in
+  each appearance and radius must be at least menu's; invalid values are reported, not clamped.
+- Type scale must be 0.9–1.3, spacing scale 1.0–1.25, and explicit theme radii 0–12 pt (half the
+  smallest 24 pt control). Pack locks reject even inherited or explicitly neutral overrides.
+
 ## 0.58.0 (2026-10-23)
 
 ### Breaking

@@ -32,10 +32,10 @@ public struct LumenPalette: Hashable, Sendable, Codable, ExpressibleByDictionary
     }
 }
 
-/// A theme: an identity plus up to four palettes. Stored as JSON (schema version 1), usually as
+/// A theme: an identity, up to four palettes and optional metrics. Stored as JSON, usually as
 /// a short list of overrides on top of an `inherits` parent.
 public struct LumenTheme: Identifiable, Hashable, Sendable, Codable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public var schemaVersion: Int
     public var id: String
@@ -63,12 +63,19 @@ public struct LumenTheme: Identifiable, Hashable, Sendable, Codable {
     public var dark: LumenPalette?
     public var lightHighContrast: LumenPalette?
     public var darkHighContrast: LumenPalette?
+    /// Optional schema-2 metrics. Leaving these absent preserves schema-1 encoding; adding them
+    /// promotes the theme to schema 2. Removing them does not downgrade an explicitly v2 theme.
+    public var metrics: LumenThemeMetrics? {
+        didSet {
+            if metrics != nil { schemaVersion = max(schemaVersion, 2) }
+        }
+    }
 
     /// `colorSpace` left out (`nil`) inherits the parent's, as in a theme file; sRGB at the root.
     public init(id: String, name: String, summary: String = "", colorSpace: LumenColorSpace? = nil, isHighContrast: Bool? = nil,
                 inherits: String? = nil, light: LumenPalette?, dark: LumenPalette?,
                 lightHighContrast: LumenPalette? = nil, darkHighContrast: LumenPalette? = nil) {
-        schemaVersion = Self.currentSchemaVersion
+        schemaVersion = 1
         self.id = id
         self.name = name
         self.summary = summary
@@ -79,11 +86,43 @@ public struct LumenTheme: Identifiable, Hashable, Sendable, Codable {
         self.dark = dark
         self.lightHighContrast = lightHighContrast
         self.darkHighContrast = darkHighContrast
+        metrics = nil
+    }
+
+    /// Creates a schema-2 theme with metric overrides, retaining the original initializer for
+    /// callers that only supply palettes.
+    public init(id: String, name: String, summary: String = "", colorSpace: LumenColorSpace? = nil, isHighContrast: Bool? = nil,
+                inherits: String? = nil, light: LumenPalette?, dark: LumenPalette?,
+                lightHighContrast: LumenPalette? = nil, darkHighContrast: LumenPalette? = nil,
+                metrics: LumenThemeMetrics) {
+        self.init(id: id, name: name, summary: summary, colorSpace: colorSpace, isHighContrast: isHighContrast,
+                  inherits: inherits, light: light, dark: dark,
+                  lightHighContrast: lightHighContrast, darkHighContrast: darkHighContrast)
+        self.metrics = metrics
+        schemaVersion = 2
+    }
+
+    // File spelling is not theme identity. Keep the original bytes with a canonical snapshot so
+    // library export can preserve whitespace, omitted fields and hex casing until a value changes.
+    private struct SourceEncoding: Hashable, Sendable {
+        var original: Data?
+        var canonical: Data?
+        static func == (_ lhs: Self, _ rhs: Self) -> Bool { true }
+        func hash(into hasher: inout Hasher) {}
+    }
+    private var source = SourceEncoding()
+
+    package mutating func retainSourceEncoding(_ data: Data, canonical: Data) {
+        source = SourceEncoding(original: data, canonical: canonical)
+    }
+
+    package func sourceEncoding(matching canonical: Data) -> Data? {
+        source.canonical == canonical ? source.original : nil
     }
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, id, name, summary, colorSpace, inherits, light, dark, lightHighContrast, darkHighContrast
-        case highContrast
+        case highContrast, metrics
     }
 
     /// Only `id` and `name` are required, and the file must satisfy the published schema: a
@@ -91,7 +130,7 @@ public struct LumenTheme: Identifiable, Hashable, Sendable, Codable {
     /// checks so the loader can report it as needing a newer app.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? Self.currentSchemaVersion
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
         id = try c.decode(String.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
         summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
@@ -102,6 +141,9 @@ public struct LumenTheme: Identifiable, Hashable, Sendable, Codable {
         dark = try c.decodeIfPresent(LumenPalette.self, forKey: .dark)
         lightHighContrast = try c.decodeIfPresent(LumenPalette.self, forKey: .lightHighContrast)
         darkHighContrast = try c.decodeIfPresent(LumenPalette.self, forKey: .darkHighContrast)
+        // Future schemas must reach the loader's "needs a newer app" path even if their metric
+        // representation is not understood by this app.
+        metrics = schemaVersion <= Self.currentSchemaVersion ? try c.decodeIfPresent(LumenThemeMetrics.self, forKey: .metrics) : nil
         guard schemaVersion <= Self.currentSchemaVersion else { return }
         guard schemaVersion >= 1 else {
             throw DecodingError.dataCorruptedError(forKey: .schemaVersion, in: c, debugDescription: "schemaVersion must be 1 or higher")
@@ -120,7 +162,7 @@ public struct LumenTheme: Identifiable, Hashable, Sendable, Codable {
 
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(schemaVersion, forKey: .schemaVersion)
+        try c.encode(metrics == nil ? schemaVersion : max(schemaVersion, 2), forKey: .schemaVersion)
         try c.encode(id, forKey: .id)
         try c.encode(name, forKey: .name)
         try c.encode(summary, forKey: .summary)
@@ -131,6 +173,7 @@ public struct LumenTheme: Identifiable, Hashable, Sendable, Codable {
         try c.encodeIfPresent(dark, forKey: .dark)
         try c.encodeIfPresent(lightHighContrast, forKey: .lightHighContrast)
         try c.encodeIfPresent(darkHighContrast, forKey: .darkHighContrast)
+        try c.encodeIfPresent(metrics, forKey: .metrics)
     }
 
     /// Top-level keys in a theme file that aren't theme fields ("darkHighcontrast"): they're
@@ -138,7 +181,7 @@ public struct LumenTheme: Identifiable, Hashable, Sendable, Codable {
     public static func unknownTopLevelKeys(in data: Data) -> [String] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
         let known = Set(["$schema"] + [CodingKeys.schemaVersion, .id, .name, .summary, .colorSpace, .inherits, .light, .dark,
-                                       .lightHighContrast, .darkHighContrast, .highContrast].map(\.stringValue))
+                                       .lightHighContrast, .darkHighContrast, .highContrast, .metrics].map(\.stringValue))
         return object.keys.filter { !known.contains($0) }.sorted()
     }
 
@@ -194,6 +237,10 @@ public struct LumenTheme: Identifiable, Hashable, Sendable, Codable {
         result.dark = merge(\.dark)
         result.lightHighContrast = mergeContrast(\.light, \.lightHighContrast)
         result.darkHighContrast = mergeContrast(\.dark, \.darkHighContrast)
+        result.metrics = chain.reversed().reduce(nil as LumenThemeMetrics?) { base, theme in
+            guard let layer = theme.metrics else { return base }
+            return base.map { $0.merging(layer) } ?? layer
+        }
         return result
     }
 

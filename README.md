@@ -97,7 +97,8 @@ behind them.
 - **Search & navigation:** `.lumenCommandPalette` with `LumenPaletteScope`, `LumenCommandMenu`,
   `LumenMenuLabel`, `LumenFindPanel`, `LumenSearchResults`, `LumenHighlightedText`,
   `LumenInputPalette` with `LumenGoToLine` (`.lumenInputPalette`; `.lumenGoToLine` isn't in the Catalog),
-  `LumenCompletionList`, `LumenShortcutRecorder`,
+  `LumenCompletionList`, `LumenShortcutRecorder`, `LumenShortcut`, `LumenShortcutGroup`,
+  `LumenShortcutsSheet`, `.lumenShortcutsSheet`, `LumenShortcutsCommands` (Help › Keyboard Shortcuts, ⌘/),
   `LumenFilterChips`, `LumenAddressField`, `.lumenCommandMenu`, `.lumenPanelCommands`, `.lumenPaneCommands`,
   `.lumenMenuOwnsShortcuts`, `.lumenFocusRing`, `LumenViewCommands` (see Docs/KEYBOARD.md) [Menus, Search & Navigation, ⌘K anywhere; the Split Workspace
   window].
@@ -116,7 +117,7 @@ behind them.
 - **States & feedback:** `LumenBadge`, `LumenPill`, `LumenTag`, `.lumenTagTint` (not in the Catalog), `LumenCount`,
   `LumenSectionHeader`, `LumenSymbol`, `LumenSymbolBadge`, `LumenSentenceText`, `LumenKeycap`, `LumenEmptyState`
   (`LumenEmptyState.Prominence` `.inline`/`.pane`, `LumenEmptyState.inline(_:ink:leading:padding:)`,
-  `.lumenEmptyMessage`), `LumenEmptyHero`, `LumenBanner`, `LumenLoadingState`, `LumenErrorState`, `LumenProgressBar`,
+  `.lumenEmptyMessage`), `LumenEmptyHero`, `LumenBanner`, `LumenToast`, `LumenToastCenter`, `.lumenToasts`, `LumenLoadingState`, `LumenErrorState`, `LumenProgressBar`,
   `LumenProgressRing`, `LumenListRow` (`LumenRowState`, `.lumenRowBackground`), `LumenPropertyRow`,
   `LumenStatusRow`, `LumenCodeSample`, `LumenStatusLabel`, `.lumenPopover` (`LumenPopoverContent`), `.lumenCompactControl`
   (not in the Catalog), `LumenIconTile`, `LumenGlyph` (`LumenGlyphView`) [Components, States & Rows, Forms & Controls, Popovers,
@@ -414,7 +415,17 @@ for theme in registry.builtInThemes {
 ```sh
 swift run lumen-theme validate MyTheme.json
 swift run lumen-theme export Docs/reference
+swift run lumen-theme diff lumen.standard MyTheme.json
+swift run lumen-theme diff previous/builtin-themes.json current/builtin-themes.json --format markdown
+swift run lumen-theme contrast MyTheme.json --format json
 ```
+
+`diff` compares theme files, built-in IDs, or exported theme arrays; arrays match themes by ID.
+It reports per-appearance color additions, removals and changes, metric/depth changes, and
+affected contrast requirements before and after. `contrast` lists every contrast requirement,
+failures first, using the validator’s exact ratios. Both support plain text (default), Markdown
+and JSON; differences or failing contrast do not cause a nonzero exit. Unreadable or invalid
+inputs do. See `Docs/reference/theme-cli.md` for report shapes and release review behavior.
 
 ## Development
 
@@ -463,3 +474,22 @@ The source helper matches literal text, including comments and strings, and repo
 files. Workbench's staged `WorkbenchStyleRatchet` shows how an app can allow a fixed occurrence
 budget and fail above it. The Catalog's Conformance page groups app checks by `owner` without
 running them. The runner preserves context/check ordering and the existing finding format.
+
+### Window notices and keyboard reference
+
+Hold `@State private var toasts = LumenToastCenter()` in each window root and apply
+`.lumenToasts(toasts)` to its content. Apply it above the status bar, before a bottom
+`safeAreaInset`, or pass the occupied status-bar height as `bottomInset:`.
+`toasts.post(LumenToast(title: "Saved", tone: .success))` returns the ID accepted by
+`dismiss(id:)`. Info/success last four visible, unhovered seconds; warning/danger stay.
+Explicit `duration: nil` keeps any tone. The newest three appear with a +N count for older
+notices; hidden notices retain their remaining time. Actions run once per click and dismiss
+their notice. Long titles and messages wrap; unusually tall stacks scroll within the host.
+
+Add `LumenShortcutsCommands()` beside `LumenViewCommands()` in scene commands. On the window,
+apply `.lumenShortcutsSheet(groups: LumenViewCommands().shortcutGroups + appGroups +
+LumenShortcutsCommands.shortcutGroups)`. Use the same configured `LumenViewCommands` value
+for menus and groups. Pass pane titles to `shortcutGroups(panes:)` when publishing pane commands.
+The standalone `LumenShortcutsSheet(groups:)` also fits a utility window; its opaque content
+reflows into columns and scrolls within its bounds. The Catalog's States & Rows page demonstrates
+the toast tones and stack, and Help opens its actual command reference.

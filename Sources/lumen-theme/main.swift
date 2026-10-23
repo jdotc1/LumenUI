@@ -13,7 +13,7 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 let registry = LumenRegistry.core
 
 func usage() -> Never {
-    printError("usage: lumen-theme validate <file.json>... | lumen-theme export <directory>")
+    printError("usage: lumen-theme validate <file.json>... | lumen-theme export <directory> | lumen-theme export --format dtcg [<theme>|--all] <dir> | lumen-theme export --format css <theme> <file> | lumen-theme import --format dtcg <file> [-o <theme.json>] | lumen-theme diff <a> <b> [--format markdown|json] | lumen-theme contrast <theme> [--format markdown|json]")
     exit(2)
 }
 
@@ -37,6 +37,12 @@ func describe(_ error: any Error) -> String {
 }
 
 switch arguments.first {
+case "diff", "contrast":
+    do {
+        try runReport(arguments[0], arguments: Array(arguments.dropFirst()), registry: registry)
+    } catch {
+        printError("\(arguments[0]) failed: \(describe(error))"); exit(1)
+    }
 case "validate" where arguments.count > 1:
     var failed = false
     for path in arguments.dropFirst() {
@@ -66,12 +72,11 @@ case "validate" where arguments.count > 1:
         }
     }
     exit(failed ? 1 : 0)
-case "export" where arguments.count == 2:
+case "export", "import":
     do {
-        try LumenExport.write(registry, to: URL(fileURLWithPath: arguments[1], isDirectory: true))
-        print("wrote \(LumenExport.fileNames.themes), \(LumenExport.fileNames.schema), \(LumenExport.fileNames.reference) to \(arguments[1])")
+        try runInterchange(arguments[0], arguments: Array(arguments.dropFirst()), registry: registry)
     } catch {
-        printError("export failed: \(describe(error))"); exit(1)
+        printError("\(arguments[0]) failed: \(describe(error))"); exit(1)
     }
 default:
     usage()

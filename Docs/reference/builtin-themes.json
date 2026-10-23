@@ -440,8 +440,11 @@
       "titlebar.activeBottom" : "#FFFFFF",
       "titlebar.activeTop" : "#FFFFFF"
     },
+    "metrics" : {
+      "typeScale" : 1.1
+    },
     "name" : "Contrast",
-    "schemaVersion" : 1,
+    "schemaVersion" : 2,
     "summary" : "Maximum legibility: pure grounds and strong lines."
   }
 ]
