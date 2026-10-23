@@ -11,6 +11,82 @@ the people moving an app's pin:
 
 Apps pin exact commits; each release names its commit and tag.
 
+## Unreleased
+
+## 0.57.0 (2026-10-23)
+
+### Fixed
+- Flexible toolbar status capsules size to their full text and percentage, shrinking only when the
+  measured native toolbar room requires it. The Catalog no longer imposes a window-width budget.
+- Toolbar identity items using `lumenToolbarPlatter` stay bare in both chrome styles, preserving
+  the full two-line title instead of clipping it in a glass control platter.
+- The drawn sidebar toggle uses the inspector button's outline glyph style and sits before the
+  native sidebar tracking separator, preserving the sidebar column's toolbar position.
+
+### Added
+- `lumenSidebarToggle(columnVisibility:)` for split-view sidebar content: a bare Lumen panel
+  toggle in drawn chrome, the native toggle in glass, switching without resetting content.
+- Flexible `idealWidth:minWidth:` initializers for `LumenToolbarStatus` and `LumenActivityStatus`,
+  with middle truncation. `LumenToolbarStatus(_:minWidth:)` measures content and native room;
+  its `idealWidth:` overload is deprecated and forwards to the new behavior. The Catalog places
+  the status after the identity rather than independently centering it.
+- Conformance protocol (roadmap A3): `LumenCheck`, plain-value `LumenCheckContext`, and
+  `LumenConformance.run(_:in:)` for app-owned checks with the existing finding format. The twelve
+  built-in checks now have internal conforming types; every static API remains compatible.
+- `LumenConformance.forbiddenSourcePatterns(_:in:)` for literal UTF-8 source guards.
+  A minimum-text-size check and a label check are deferred until the renderer exposes resolved text sizes and the SwiftUI accessibility tree.
+- Workbench's staged style-budget check and a Catalog Conformance page grouping app checks by
+  owner. The page lists metadata without executing checks.
+- `LumenChromeStyle` (`.drawn`, `.glass`) and `LumenStoreConfiguration.chromeStyle`, with a second
+  initializer that takes it; `.lumenChromeStyle(_:)` overrides it for a subtree, and
+  `\.lumenResolvedChromeStyle` is what draws. The default is `.drawn`, so apps render unchanged.
+  Under `.glass` on macOS 26 and later the unified top bar's items show the system platter, the
+  title bar band is flat `toolbar.background` while active, and the command palette draws on
+  system glass with no hairline. `.glass` draws as `.drawn` below macOS 26, under Reduce
+  Transparency and in offscreen renders (PRINCIPLES §11).
+- Docs/GLASS.md, the glass policy, and PRINCIPLES §11 "Glass".
+- Catalog: a Glass toggle in the main window's toolbar switches every window's chrome style;
+  `LUMEN_CATALOG_CHROME=glass|drawn` sets it at launch.
+- Tests: `.glass` goldens for the unified top bar, window-rendered on macOS 26 and later;
+  resolution, backlight and surface-step checks for the glass navigation surfaces.
+- Scoped theme stores (roadmap A2). `LumenThemeStore(configuration:registry:themes:persistsSelection:)`
+  builds a store for a second window or a preview, beside the shared one; it persists nothing
+  unless asked. `.lumenPaletteRoot()` and `.lumenPaletteRoot(windowChrome:)` without a store keep
+  the store already in the environment (the shared store outside any root).
+  `LumenThemeGallery()` and `LumenAppearanceSettings(showsGallery:)` without a store use the
+  window's store. `install(_:)` stays the one-liner for single-store apps.
+- `LumenSnapshot.render`, `png` and `verify` against a given store (`store:colorScheme:`), which
+  give it to the view only through the environment, and `LumenSnapshot.variant(of:colorScheme:)`
+  for their golden names.
+- Catalog: the Themes page previews every built-in theme at once, each through its own store.
+- Tests: two stores rendered in one process with their own goldens
+  (`scoped-store-showcase@{standard,ultraviolet}-dark`); Workbench's XPC snapshot (110 role colors
+  plus spacing and radius) produced from non-global stores.
+
+- `ToolbarContent.lumenToolbarPlatter(_:)`: the chrome style's platter rule for native toolbar
+  items (hidden in `.drawn`, the system's under `.glass`, nothing before macOS 26). `LumenTopBar`
+  uses it; the Catalog's main and workspace windows now apply it to their own toolbar items, which
+  showed the system platter in `.drawn` (Docs/GLASS.md › What each surface draws).
+- Catalog: `Scripts/install-catalog.sh` restamps the built
+  executable's SDK version (`xcrun vtool`, from `xcrun --show-sdk-version`), since `swift build`
+  under Xcode 27.2 stamped it sdk 14.0 and AppKit drew the pre-26 design: no platters, no glass.
+
+### Visual
+- Command palette under `.glass`: the scope track is a hairline capsule with no fill, so no flat
+  band sits across the glass (Docs/GLASS.md › What each surface draws). `.drawn` is unchanged.
+
+### Fixed
+- Command palette: the result list shrinks to the height it's offered and scrolls, up to 380 pt;
+  it held its full height under `.fixedSize`, so 30 commands overflowed a 420 pt tall frame by 42 pt.
+
+### Deprecated
+- `Lumen.color(_:)` and `Lumen.nsColor(_:)`: they read the shared store whatever window they're in.
+  Read `@Environment(\.lumenPalette)` (or `store.color(_:)` / `store.nsColor(_:)`) instead. They
+  keep working until 1.0.
+
+API check (`Scripts/api-check.sh v0.56.2`, 2026-10-19): no breaking changes in LumenTokens, LumenUI
+or LumenConformance.
+
 ## 0.56.2 (2026-10-18)
 
 ### Visual

@@ -26,6 +26,10 @@ final class LumenLiveWindowTests: XCTestCase {
         var buttons: CGRect?
         /// Hosted toolbar items in order, with whether AppKit shows them.
         var items: [(frame: CGRect, visible: Bool)] = []
+        var hiddenItemIdentifiers: [String] = []
+        var itemIdentifiers: [String] = []
+        var statusFrame: CGRect?
+        var precedingStatusFrame: CGRect?
         /// Each NSSplitView (outermost first): its frame and its shown columns' frames, in window
         /// coordinates (x from the window's leading edge).
         var splits: [(frame: CGRect, columns: [CGRect])] = []
@@ -39,7 +43,7 @@ final class LumenLiveWindowTests: XCTestCase {
 
     /// Lays `view` out in an offscreen window of `size` (`unified` for the split workspace's compact
     /// band, else the Catalog's `.unified` toolbar) and measures it.
-    func layOut<V: View>(_ view: V, size: CGSize, compact: Bool, sizing: NSHostingSizingOptions = []) -> Layout {
+    func layOut<V: View>(_ view: V, size: CGSize, compact: Bool, sizing: NSHostingSizingOptions = [], orderOffscreen: Bool = false) -> Layout {
         let store = LumenSnapshot.store(for: .init(themeID: LumenThemes.standardID, colorScheme: .dark), registry: Self.registry)
         return LumenThemeStore.withActiveStore(store) { () -> Layout in
             // The task-local override runs its body nonisolated; the test itself is on the main actor.
@@ -68,6 +72,10 @@ final class LumenLiveWindowTests: XCTestCase {
             }
             window.contentView = host
             window.setContentSize(size)
+            if orderOffscreen {
+                window.setFrameOrigin(CGPoint(x: -10000, y: -10000))
+                window.orderBack(nil)
+            }
             for _ in 0..<20 {
                 (host.superview ?? host).layoutSubtreeIfNeeded(); window.displayIfNeeded()
                 RunLoop.current.run(until: Date().addingTimeInterval(0.03))
@@ -85,9 +93,16 @@ final class LumenLiveWindowTests: XCTestCase {
             layout.buttons = buttons.isEmpty ? nil : buttons.dropFirst().reduce(buttons[0]) { $0.union($1) }
             if let toolbar = window.toolbar {
                 let visible = Set((toolbar.visibleItems ?? []).map(\.itemIdentifier))
+                layout.itemIdentifiers = toolbar.items.map { $0.itemIdentifier.rawValue }
+                layout.hiddenItemIdentifiers = toolbar.items.filter { !($0 is NSTrackingSeparatorToolbarItem) && !visible.contains($0.itemIdentifier) }
+                    .map { $0.itemIdentifier.rawValue }
                 for item in toolbar.items {
                     guard let view = item.view else { continue }
                     let frame = view.window != nil ? flip(view.bounds, from: view) : .zero
+                    if item.itemIdentifier.rawValue == "catalog.status" {
+                        layout.statusFrame = frame
+                        layout.precedingStatusFrame = layout.items.last?.frame
+                    }
                     layout.items.append((frame, visible.contains(item.itemIdentifier)))
                 }
             }
@@ -240,6 +255,37 @@ final class LumenLiveWindowTests: XCTestCase {
         XCTAssertTrue(status.visible && status.frame.width > 1, "a short status is hidden in a 1700 pt window (\(status.frame))")
         XCTAssertGreaterThanOrEqual(status.frame.width, needed + LumenMetrics.standard.iconSize.regular,
                                     "the status shows in \(Int(status.frame.width)) pt; its label alone needs \(Int(needed.rounded(.up)))")
+    }
+
+    func testWorkingCatalogToolbarFitsDefaultWidthInBothChromeStyles() throws {
+        let previous = ProcessInfo.processInfo.environment["LUMEN_CATALOG_ACTIVITY"]
+        setenv("LUMEN_CATALOG_ACTIVITY", "working", 1)
+        defer {
+            if let previous { setenv("LUMEN_CATALOG_ACTIVITY", previous, 1) }
+            else { unsetenv("LUMEN_CATALOG_ACTIVITY") }
+        }
+        for style in [LumenChromeStyle.drawn, .glass] {
+            let layout = layOut(CatalogView().lumenChromeStyle(style),
+                                size: CGSize(width: 972, height: 640), compact: false, orderOffscreen: true)
+            XCTAssertGreaterThanOrEqual(layout.items.count, 5)
+            XCTAssertTrue(layout.items.allSatisfy { $0.visible }, "\(style): \(layout.items)")
+            XCTAssertEqual(layout.hiddenItemIdentifiers, [], "\(style): \(layout.itemIdentifiers)")
+            let metrics = LumenMetrics.standard
+            let natural = NSHostingController(rootView: HStack(spacing: metrics.spacing.s3) {
+                Color.clear.frame(width: metrics.iconSize.regular, height: 1)
+                Text("Analyzing libsystem_kernel.dylib").font(metrics.typography.callout)
+                Spacer(minLength: 0).frame(width: 0)
+                Text("42%").font(metrics.typography.caption.monospacedDigit())
+            }.padding(.horizontal, metrics.spacing.s4).fixedSize())
+                .sizeThatFits(in: CGSize(width: 10000, height: 100)).width
+            let status = try XCTUnwrap(layout.statusFrame)
+            let identity = try XCTUnwrap(layout.precedingStatusFrame)
+            let decoration = metrics.spacing.s4 + metrics.stroke.hairline + 2 * metrics.spacing.s1
+            XCTAssertGreaterThanOrEqual(status.width + 0.5, natural + decoration,
+                                        "\(style): full label needs \(natural) pt plus its divider")
+            XCTAssertGreaterThanOrEqual(status.minX, identity.maxX, "status must not overlap the identity")
+            print("Catalog \(style) 972 pt: \(layout.items); identifiers=\(layout.itemIdentifiers)")
+        }
     }
 
     /// Nova's rule: every top-bar item sits on the window buttons' center line, past the buttons.

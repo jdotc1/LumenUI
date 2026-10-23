@@ -13,15 +13,18 @@ public extension View {
     /// The window's title bar glows (`titlebar.activeTop` → `titlebar.activeBottom`) while the
     /// window is active and goes flat (`toolbar.background`) when it isn't, so the frontmost window is
     /// obvious at a glance. Lumen's toolbar pieces dim with it. Apply to the window's root view.
+    /// Under `LumenChromeStyle.glass` the band is flat `toolbar.background` in both states, so the
+    /// gradient never sits under the system's glass platters (PRINCIPLES §11).
     func lumenWindowChrome() -> some View { modifier(LumenWindowChromeModifier()) }
 }
 
 private struct LumenWindowChromeModifier: ViewModifier {
     @Environment(\.controlActiveState) private var activeState
     @Environment(\.lumenPalette) private var palette
+    @Environment(\.lumenResolvedChromeStyle) private var chromeStyle
 
     func body(content: Content) -> some View {
-        let active = activeState != .inactive
+        let active = activeState != .inactive && chromeStyle == .drawn
         let style: AnyShapeStyle = active
             ? AnyShapeStyle(LinearGradient(colors: [palette[.titlebarActiveTop], palette[.titlebarActiveBottom]],
                                            startPoint: .top, endPoint: .bottom))
@@ -34,15 +37,17 @@ private struct LumenWindowChromeModifier: ViewModifier {
 
 /// The title bar glow as a view, for apps that draw their own top bar under a hidden title bar
 /// (where `.lumenWindowChrome()` has no native toolbar to paint): the gradient while the window is
-/// active, flat `toolbar.background` when it isn't.
+/// active, flat `toolbar.background` when it isn't. Flat in both states under
+/// `LumenChromeStyle.glass` (PRINCIPLES §11).
 public struct LumenTitlebarBackground: View {
     @Environment(\.controlActiveState) private var activeState
     @Environment(\.lumenPalette) private var palette
+    @Environment(\.lumenResolvedChromeStyle) private var chromeStyle
 
     public init() {}
 
     public var body: some View {
-        if activeState != .inactive {
+        if activeState != .inactive && chromeStyle == .drawn {
             LinearGradient(colors: [palette[.titlebarActiveTop], palette[.titlebarActiveBottom]], startPoint: .top, endPoint: .bottom)
         } else {
             palette[.toolbarBackground]

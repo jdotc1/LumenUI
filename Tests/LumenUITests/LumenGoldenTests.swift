@@ -1447,6 +1447,37 @@ final class LumenGoldenTests: XCTestCase {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top), "unified-top-bar", CGSize(width: 1100, height: 92))
     }
+
+    // MARK: Glass chrome (PRINCIPLES §11, Docs/GLASS.md)
+
+    /// `.glass` goldens are drawn in a real window (offscreen renders draw `.drawn`), on macOS 26 and
+    /// later with Reduce Transparency off. Only surfaces whose `.glass` look the capture holds
+    /// faithfully get one.
+    private func skipUnlessGlassDraws() throws {
+        try XCTSkipUnless(LumenChromeStyle.systemSupportsGlass, "glass needs macOS 26 or later")
+        try XCTSkipIf(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency, "Reduce Transparency draws glass as drawn")
+    }
+
+    // No command-palette golden in `.glass`: the window capture (`cacheDisplay`) draws no system
+    // glass, so it would record the rows without their ground. The Catalog is its receipt (GLASS.md).
+
+    /// The unified top bar's band under `.glass`: flat `toolbar.background` while active.
+    func testUnifiedTopBarGlass() throws {
+        try skipUnlessGlassDraws()
+        check(HStack(spacing: 8) {
+            Color.clear.frame(width: LumenLayout.windowButtonsInset)
+            LumenToolbarIdentity("libsystem_kernel.dylib", subtitle: "arm64e · Mach-O dylib", systemImage: "lumen.binaryFile", hue: .hueOrange)
+            LumenToolbarStatus(.working("Analyzing libsystem_kernel.dylib", progress: 0.42), width: 260)
+                .environment(\.lumenToolbarStatusRoom, 320)
+            Spacer(minLength: 8)
+            LumenPanelToggles(leading: .constant(true), bottom: .constant(true), trailing: .constant(true), registersShortcuts: false)
+                .padding(.trailing, 12)
+        }
+        .environment(\.lumenToolbarCompact, true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(LumenTitlebarBackground())
+        .lumenChromeStyle(.glass), "unified-top-bar-glass", CGSize(width: 1100, height: 40), renderer: .window)
+    }
 }
 
 private enum GoldenMode: String, CaseIterable {

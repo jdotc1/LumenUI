@@ -11,7 +11,7 @@ keeps or brands it through themes and metrics.
 | Home | Its own repository, consumed through Swift Package Manager | No app owns it. Each app pins a version and upgrades on its own schedule |
 | Platform | macOS only, macOS 14 minimum | `@Observable` needs 14; `Mutex` (macOS 15) is replaced by `OSAllocatedUnfairLock` |
 | Language | Swift 6 language mode, strict concurrency | Matches every app |
-| Name | Lumen; libraries `LumenTokens`, `LumenUI` and `LumenConformance` (test targets only); executables `lumen-theme` and `LumenCatalog` | Neutral, not tied to an app |
+| Name | Lumen; libraries `LumenTokens`, `LumenUI` and `LumenConformance` (app test targets and Catalog metadata); executables `lumen-theme` and `LumenCatalog` | Neutral, not tied to an app |
 
 ## Layers
 
@@ -25,7 +25,7 @@ keeps or brands it through themes and metrics.
 │   theme store · palette environment · scales · density       │
 │   components · theme gallery / editor / library · snapshots  │
 ├──────────────────────────────────────────────────────────────┤
-│ LumenConformance  (an app's tests only)                      │
+│ LumenConformance  (tests and Catalog metadata)                      │
 │   themes · layout · shortcuts · coverage · workspace window  │
 │   truncation · icon scale · overflow · surface steps         │
 │   backlight · visible duplicates · narrow sizing             │
@@ -109,6 +109,22 @@ chain loops, theme ids are unique and every built-in theme's parent exists.
 
 The theme editor, the gallery's badges and import all use the same validator.
 
+**Store.** A `LumenThemeStore` holds an app's registry, the themes it offers, each surface's
+selection and the accent mode, and resolves colors from them. Views get it from the environment:
+`.lumenPaletteRoot(store:)` injects the store (`\.lumenStore`), its resolved palette
+(`\.lumenPalette`) and its window theme's forced appearance, and every Lumen view below reads
+those, never a global (roadmap A2). So stores are scoped per window:
+- An app with one store calls `LumenThemeStore.install(_:)` once; `.lumenPaletteRoot()` with no
+  argument, and anything outside a root, uses that shared store.
+- A second store (`LumenThemeStore(configuration:registry:)`, non-persisting by default) drawing
+  another window or a preview lives beside it. A root without an argument inside its subtree keeps
+  it; the theme gallery and Appearance settings follow it unless given a store.
+- `LumenThemeStore.active` is the shared store, or a task-local override that tests and variant
+  snapshots install with `withActiveStore(_:_:)`. Only the global lookups read it: `Lumen.color`
+  and `Lumen.nsColor` (deprecated, removed in 1.0), `.lumen(_:)`, `Lumen.palette` and
+  `Lumen.theme(for:)`. `LumenSnapshot`'s store-based renders don't install an override, so a view
+  that still reads one of those shows it in its golden.
+
 ## What lives where
 
 | Concern | Lumen core | App pack |
@@ -145,6 +161,43 @@ The theme editor, the gallery's badges and import all use the same validator.
 | Code (`LumenCodePane.swift`, `LumenListing.swift`, `LumenGraph.swift`): code listing, status strip, line-number ruler, listing rows, branch lanes, string rows, graph nodes and edge badges | ✓ (`LumenUI`) | its code and graph |
 | Extras (`LumenExtras.swift`): tab overview, checklist tree, commit composer, font picker, code sample, status row, store item card, carousel, detail header | ✓ (`LumenUI`) | |
 | Theme miniature | ✓ generic | may supply its own |
+
+## Conformance checks
+
+`LumenCheck: Sendable` gives each rule an instance `id`, `title`, and `owner` (default `"Lumen"`),
+plus `@MainActor run(in:)`. `LumenCheckContext` is a plain value containing a registry, optional
+extra themes, sizes, snapshot variants, and an optional `(name: String, view: AnyView)` subject.
+It is not Sendable: views remain on the main actor. Nil themes means the registry's built-ins;
+an explicit empty array means no themes. A source-only check ignores rendering inputs.
+
+`LumenConformance.run(_:in:)` runs contexts in supplied order, and checks in supplied order
+within each context. It returns the existing `Finding` values unchanged, including duplicates;
+it does not deduplicate, rewrite subjects, or add a reporting side effect. Checks decide which
+sizes and variants they use. Give a source-only check one context to avoid reading it repeatedly.
+The twelve original rules are internal conforming types; all existing static entry points retain
+their signatures and forward to those types' shared implementations. Geometry helpers keep the
+original offscreen window host; context-driven rendered checks use snapshot stores for variants.
+
+`lumenReportsLayoutChecks` is an existing Boolean SwiftUI environment flag, not a reporter. It
+controls whether tables collect their layout preferences, defaults on when XCTest is loaded,
+and is unchanged. Callers outside tests can opt in through the subject's environment.
+
+A3 ships the protocol, runner, twelve refit checks, and `forbiddenSourcePatterns(_:in:)`.
+The source helper reads the specified UTF-8 files, matching literal, case-sensitive,
+non-overlapping strings, including comments and string literals. Duplicate files/patterns are
+checked once. Unreadable files and empty patterns produce coverage findings.
+
+A minimum-text-size check and a label check are deferred until the renderer exposes resolved text sizes and the SwiftUI accessibility tree.
+
+`Examples/WorkbenchLumen/WorkbenchStyleRatchet.swift` demonstrates an app-owned source check with an
+allowed occurrence budget. The caller supplies files and a budget; the example does not claim to
+measure the current external Workbench checkout. Its test exercises the accepted boundary and the
+failure above it through the public runner.
+
+The Catalog's Conformance page lists Lumen checks and groups app checks by their declared `owner`.
+It displays metadata only, never running checks or reading source files while browsing. The
+Catalog and staged Workbench example therefore link LumenConformance; consuming apps should still
+keep checks in their test targets.
 
 ## API naming
 
@@ -195,8 +248,9 @@ pass `.hueBlue` to match `LumenCollectionItem` on the same page.
 - Releases are cut only with `Scripts/release.sh <version>`: it refuses to tag until the changelog has
   the entry, the API check against the previous release passes (on a break, the changelog's newest
   entry must have a **Breaking** section), the build has no warnings, and every test passes with
-  goldens. CI runs on pushes to main and on pull requests: the build (warnings as errors), every
-  test except goldens, and the API check.
+  goldens. CI is manual-only and targets `macos-27`; it can run once GitHub ships that hosted
+  image. Until then, the gate is `Scripts/release.sh` on the maintainer's macOS 27 Mac. The workflow
+  retains the build (warnings as errors), every test except goldens, and the API check.
 - Releases are annotated tags (`v0.2.0`) on the commits apps pin, and CHANGELOG.md lists each one's
   breaking, visual and validator changes, so moving a pin starts from the changelog rather than the
   commit log. Before 1.0, a minor version may still carry source changes; they're listed under

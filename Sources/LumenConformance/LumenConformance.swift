@@ -42,27 +42,7 @@ public enum LumenConformance {
     ///   - allowing: known issues by theme name, as `"<appearance>: <message>"`.
     public static func themes(in registry: LumenRegistry, themes: [LumenTheme]? = nil,
                               allowing known: [String: [String]] = [:]) -> [Finding] {
-        let supplied = Dictionary((themes ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return (themes ?? registry.builtInThemes).flatMap { unflattened -> [Finding] in
-            let theme: LumenTheme
-            do {
-                theme = try unflattened.flattened { supplied[$0] ?? registry.theme(id: $0) }
-            } catch {
-                return [Finding(.theme, unflattened.name, "it \(error)")]
-            }
-            guard !theme.supportedAppearances.isEmpty else {
-                return [Finding(.theme, theme.name, "declares no light or dark palette, so there is nothing to check")]
-            }
-            let allowed = Set(known[theme.name] ?? [])
-            var findings = LumenValidator.issues(for: theme, in: registry)
-                .map { "\($0.appearance): \($0.message)" }
-                .filter { !allowed.contains($0) }
-                .map { Finding(.theme, theme.name, $0) }
-            for (isDark, token) in theme.missingTokens(in: registry) {
-                findings.append(Finding(.theme, theme.name, "\(isDark ? "dark" : "light") leaves \(token.rawValue) undefined"))
-            }
-            return findings
-        }
+        ThemesCheck.evaluate(in: registry, themes: themes, allowing: known)
     }
 
     // MARK: Layout
@@ -93,20 +73,7 @@ public enum LumenConformance {
     /// divider widths).
     @MainActor
     public static func layout(windowMinWidth: CGFloat, columns: [Column], dividers: CGFloat = 0) -> [Finding] {
-        var findings: [Finding] = []
-        for column in columns {
-            for (name, view) in column.contents {
-                let width = LumenLayout.minimumWidth(of: view)
-                if width > column.minWidth + 0.5 {
-                    findings.append(Finding(.layout, name, "needs \(Int(width.rounded(.up))) pt; its column (\(column.name)) allows \(Int(column.minWidth))"))
-                }
-            }
-        }
-        let total = columns.map(\.minWidth).reduce(dividers, +)
-        if windowMinWidth + 0.5 < total {
-            findings.append(Finding(.layout, "window", "minimum \(Int(windowMinWidth)) pt is under its columns' \(Int(total.rounded(.up)))"))
-        }
-        return findings
+        LayoutCheck.evaluate(windowMinWidth: windowMinWidth, columns: columns, dividers: dividers)
     }
 
     // MARK: Shortcuts
@@ -116,24 +83,7 @@ public enum LumenConformance {
     /// - Parameter owners: every shortcut the app registers, with what it does: its menu commands,
     ///   toolbar controls, and Lumen's own (`LumenShortcuts.all` for the ones it keeps).
     public static func shortcuts(_ owners: [(title: String, shortcut: KeyboardShortcut)]) -> [Finding] {
-        var findings: [Finding] = []
-        let name = { (shortcut: KeyboardShortcut) in LumenKeycap.text(for: shortcut) }
-        let grouped = Dictionary(grouping: owners) { signature($0.shortcut) }
-        for (_, group) in grouped.sorted(by: { $0.key < $1.key }) where group.count > 1 {
-            findings.append(Finding(.shortcut, name(group[0].shortcut),
-                                    "has \(group.count) owners: \(group.map(\.title).joined(separator: ", "))"))
-        }
-        let reserved = Dictionary(LumenShortcuts.systemReserved.map { (signature($0.shortcut), $0.title) }, uniquingKeysWith: { a, _ in a })
-        let standard = Dictionary(LumenShortcuts.standardCommands.map { (signature($0.shortcut), $0.title) }, uniquingKeysWith: { a, _ in a })
-        for owner in owners {
-            let key = signature(owner.shortcut)
-            if let system = reserved[key] {
-                findings.append(Finding(.shortcut, owner.title, "\(name(owner.shortcut)) is macOS's \(system)"))
-            } else if let command = standard[key], !owner.title.localizedCaseInsensitiveContains(command) {
-                findings.append(Finding(.shortcut, owner.title, "\(name(owner.shortcut)) is every Mac app's \(command)"))
-            }
-        }
-        return findings
+        ShortcutsCheck.evaluate(owners)
     }
 
     // MARK: Coverage
@@ -141,9 +91,7 @@ public enum LumenConformance {
     /// Every color key the app uses (its views, its user theme files) is a registered role, so
     /// nothing falls back to black or white.
     public static func coverage(in registry: LumenRegistry, usedKeys: [String]) -> [Finding] {
-        Set(usedKeys).sorted().compactMap { key in
-            registry.contains(LumenToken(key)) ? nil : Finding(.coverage, key, "isn't a registered color role")
-        }
+        CoverageCheck.evaluate(in: registry, usedKeys: usedKeys)
     }
 
     // MARK: Window
@@ -165,75 +113,7 @@ public enum LumenConformance {
     public static func workspaceWindow<Window: View>(sizes: [CGSize] = [CGSize(width: 900, height: 560), CGSize(width: 1440, height: 900)],
                                                      panels: [LumenWorkspacePanels] = LumenWorkspacePanels.allCombinations,
                                                      window: (LumenWorkspacePanels) -> Window) -> [Finding] {
-        var findings: [Finding] = []
-        var reference: CGRect?
-        for size in sizes {
-            for state in panels {
-                let subject = "\(Int(size.width))×\(Int(size.height)), " + describe(state)
-                let (recorder, top) = layOut(window(state), size: size)
-                for label in recorder.truncated.sorted() {
-                    findings.append(Finding(.layout, subject, "“\(label)” is cut short"))
-                }
-                for duplicate in visibleDuplicates(recorder.visibleTexts) {
-                    findings.append(Finding(.layout, subject, duplicate))
-                }
-                for glow in backlightEscapes(recorder) {
-                    findings.append(Finding(.layout, subject, glow))
-                }
-                for icon in recorder.undersizedIcons.sorted() {
-                    findings.append(Finding(.layout, subject, icon))
-                }
-                for clip in recorder.overflowing.sorted() + recorder.columnOverflowing.sorted() {
-                    findings.append(Finding(.layout, subject, clip))
-                }
-                guard let bar = recorder.frame else {
-                    findings.append(Finding(.layout, subject, "has no Lumen top bar; use LumenWorkspaceWindow or .lumenTopBar"))
-                    continue
-                }
-                if recorder.placement == .unified {
-                    // Nova's: the bar is the title bar band, so it starts at the window's top edge.
-                    if abs(bar.minY) > 0.5 {
-                        let moved = Int(bar.minY.rounded())
-                        findings.append(Finding(.layout, subject, moved > 0 ? "top bar starts \(moved) pt below the window's top" : "top bar moved \(-moved) pt up, off the top"))
-                    }
-                    if let buttons = recorder.windowButtons {
-                        if let content = recorder.contentFrame, content.minX < buttons.maxX - 0.5,
-                           content.minY < buttons.maxY, content.maxY > buttons.minY {
-                            findings.append(Finding(.layout, subject, "toolbar content overlaps the window buttons"))
-                        }
-                        if abs(buttons.midY - bar.midY) > 1.5 {
-                            findings.append(Finding(.layout, subject, "window buttons are \(Int(abs(buttons.midY - bar.midY).rounded())) pt off the top bar's center"))
-                        }
-                        // Nova's rule: every item sits on the window buttons' center line.
-                        for (index, item) in recorder.toolbarItems.enumerated() where abs(item.midY - buttons.midY) > 1 {
-                            findings.append(Finding(.layout, subject, "toolbar item \(index + 1) is \(Int(abs(item.midY - buttons.midY).rounded())) pt off the window buttons' center line"))
-                        }
-                        for (index, item) in recorder.toolbarItems.enumerated() where item.minX < buttons.maxX - 0.5 {
-                            findings.append(Finding(.layout, subject, "toolbar item \(index + 1) overlaps the window buttons"))
-                        }
-                    }
-                    for name in recorder.droppedToolbarItems {
-                        findings.append(Finding(.layout, subject, "toolbar item “\(name)” was dropped for lack of room"))
-                    }
-                    if recorder.hasToolbar == false {
-                        findings.append(Finding(.layout, subject, "the unified top bar has no window toolbar to host its items"))
-                    }
-                } else if abs(bar.minY - top) > 0.5 {
-                    let moved = Int((top - bar.minY).rounded())
-                    findings.append(Finding(.layout, subject, moved > 0 ? "top bar moved \(moved) pt up, off the top" : "top bar moved \(-moved) pt down"))
-                }
-                if let regionTop = recorder.regionTop, regionTop < bar.maxY - 0.5 {
-                    findings.append(Finding(.layout, subject, "a panel starts \(Int((bar.maxY - regionTop).rounded())) pt under the top bar"))
-                }
-                if bar.height < 1 {
-                    findings.append(Finding(.layout, subject, "top bar has no height"))
-                } else if let reference, abs(reference.height - bar.height) > 0.5 {
-                    findings.append(Finding(.layout, subject, "top bar is \(Int(bar.height)) pt tall, not \(Int(reference.height))"))
-                }
-                if reference == nil { reference = bar }
-            }
-        }
-        return findings
+        WorkspaceWindowCheck.evaluate(sizes: sizes, panels: panels, window: window)
     }
 
     /// PRINCIPLES §6, for any pane, sheet, settings page or window: no primary label in Lumen's
@@ -243,13 +123,7 @@ public enum LumenConformance {
     /// (`.lumenColumnContent`).
     @MainActor
     public static func truncation<Content: View>(sizes: [CGSize], of content: () -> Content) -> [Finding] {
-        sizes.flatMap { size in
-            let recorder = layOut(content(), size: size).0
-            let subject = "\(Int(size.width))×\(Int(size.height))"
-            return recorder.truncated.sorted().map { Finding(.layout, subject, "“\($0)” is cut short") }
-                + visibleDuplicates(recorder.visibleTexts).map { Finding(.layout, subject, $0) }
-                + recorder.columnOverflowing.sorted().map { Finding(.layout, subject, $0) }
-        }
+        TruncationCheck.evaluate(sizes: sizes, of: content)
     }
 
     /// PRINCIPLES §6, for table columns and lists of one-line values: no two different `values` of
@@ -259,10 +133,7 @@ public enum LumenConformance {
     /// `workspaceWindow` as rendered.
     public static func visibleDuplicates(column: String, values: [String], width: CGFloat, font: NSFont,
                                          truncation: Text.TruncationMode = .tail) -> [Finding] {
-        let entries = Set(values.map {
-            LumenVisibleTextEntry(column: column, text: $0, visible: LumenVisibleText.visible($0, width: width, font: font, truncation: truncation))
-        })
-        return visibleDuplicates(entries).map { Finding(.layout, column, $0) }
+        VisibleDuplicatesCheck.evaluate(column: column, values: values, width: width, font: font, truncation: truncation)
     }
 
     /// Groups of different texts in one column that show the same visible text, as messages.
@@ -286,9 +157,7 @@ public enum LumenConformance {
     /// `.lumenIconRole(.control)`.
     @MainActor
     public static func iconScale<Content: View>(sizes: [CGSize], of content: () -> Content) -> [Finding] {
-        sizes.flatMap { size in
-            layOut(content(), size: size).0.undersizedIcons.sorted().map { Finding(.layout, "\(Int(size.width))×\(Int(size.height))", $0) }
-        }
+        IconScaleCheck.evaluate(sizes: sizes, of: content)
     }
 
     /// Contained backlight: at each of `sizes`, every tile backlight stays
@@ -298,13 +167,11 @@ public enum LumenConformance {
     /// (`.lumenBacklightExtent`).
     @MainActor
     public static func backlight<Content: View>(sizes: [CGSize], of content: () -> Content) -> [Finding] {
-        sizes.flatMap { size in
-            backlightEscapes(layOut(content(), size: size).0).map { Finding(.layout, "\(Int(size.width))×\(Int(size.height))", $0) }
-        }
+        BacklightCheck.evaluate(sizes: sizes, of: content)
     }
 
     @MainActor
-    private static func backlightEscapes(_ recorder: FrameRecorder) -> [String] {
+    static func backlightEscapes(_ recorder: FrameRecorder) -> [String] {
         var messages: Set<String> = []
         for entry in recorder.backlights {
             guard let id = entry.containerID, let name = entry.container else {
@@ -331,12 +198,7 @@ public enum LumenConformance {
     /// off on both edges, with nothing inside reporting it, so it's measured directly.
     @MainActor
     public static func overflow<Content: View>(sizes: [CGSize], of content: () -> Content) -> [Finding] {
-        sizes.flatMap { size in
-            let subject = "\(Int(size.width))×\(Int(size.height))"
-            let recorder = layOut(content(), size: size).0
-            return rootOverflow(content(), size: size).map { Finding(.layout, subject, $0) }
-                + (recorder.overflowing.sorted() + recorder.columnOverflowing.sorted()).map { Finding(.layout, subject, $0) }
-        }
+        OverflowCheck.evaluate(sizes: sizes, of: content)
     }
 
     /// PRINCIPLES §6, narrow sizing: a split view or `NavigationSplitView` sizing its columns asks
@@ -358,15 +220,7 @@ public enum LumenConformance {
     @MainActor
     public static func narrowSizing(_ subjects: [(name: String, view: AnyView)], referenceWidth: CGFloat = 240,
                                     factor: CGFloat = 4, slack: CGFloat = 80) -> [Finding] {
-        subjects.compactMap { subject in
-            let host = NSHostingController(rootView: subject.view)
-            let reference = host.sizeThatFits(in: CGSize(width: referenceWidth, height: 0)).height
-            let narrow = host.sizeThatFits(in: CGSize(width: 1, height: 0)).height
-            guard narrow > reference * factor, narrow - reference >= slack else { return nil }
-            return Finding(.layout, subject.name, "measured 1 pt wide it asks for \(Int(narrow.rounded())) pt, "
-                           + "\(Int(reference.rounded())) pt at \(Int(referenceWidth)) pt: text that wraps without truncating "
-                           + "needs a minimum measuring width (see LumenEmptyState.inlineMeasureWidth)")
-        }
+        NarrowSizingCheck.evaluate(subjects, referenceWidth: referenceWidth, factor: factor, slack: slack)
     }
 
     /// How far `content` overflows `size` as a whole, as messages: what it takes when offered `size`,
@@ -390,10 +244,17 @@ public enum LumenConformance {
     /// inside it where two flat background colors meet at a vertical edge (a tinted gutter, an inset
     /// band). Hairlines are fine, since the same color sits on both sides. The pane is drawn in a real
     /// (offscreen) window, so AppKit-backed SwiftUI (List, Table, text views) is scanned as shipped.
+    ///
+    /// Known exclusion: an icon tile of 12 pt or more whose plate sits within `maximumStep` of the
+    /// ground reads as a background step at its two edges, because its top and bottom rows are flat
+    /// past the glyph. The M1 exit run's only `.drawn` steps were these: the command palette's 18 pt
+    /// row tiles on Midnight dark (plate 59 from `menu.background`, at x = 16 and 32 pt, 33 in one render). A tile is
+    /// content, not a ground, so the finding is excluded by reading, not by retinting the theme or
+    /// widening the thresholds (GLASS.md › Receipts).
     @MainActor
     public static func surfaceSteps<Content: View>(sizes: [CGSize], variant: LumenSnapshot.Variant = .init(themeID: LumenThemes.standardID, colorScheme: .dark),
                                                    registry: LumenRegistry = .core, of pane: () -> Content) -> [Finding] {
-        surfaceScan(sizes: sizes, variant: variant, registry: registry, headerHeight: nil, renderer: .window, of: pane)
+        SurfaceStepsCheck.evaluate(sizes: sizes, variant: variant, registry: registry, of: pane)
     }
 
     /// `surfaceSteps(sizes:variant:registry:of:)`, and also compares the flat background of the top
@@ -403,7 +264,7 @@ public enum LumenConformance {
     @MainActor
     public static func surfaceSteps<Content: View>(sizes: [CGSize], variant: LumenSnapshot.Variant = .init(themeID: LumenThemes.standardID, colorScheme: .dark),
                                                    registry: LumenRegistry = .core, headerHeight: CGFloat, of pane: () -> Content) -> [Finding] {
-        surfaceScan(sizes: sizes, variant: variant, registry: registry, headerHeight: headerHeight, renderer: .window, of: pane)
+        SurfaceStepsCheck.evaluate(sizes: sizes, variant: variant, registry: registry, headerHeight: headerHeight, of: pane)
     }
 
     /// How a surface scan draws the pane: in a real window (as shipped), or with `ImageRenderer`
@@ -412,13 +273,13 @@ public enum LumenConformance {
 
     @MainActor
     static func surfaceScan<Content: View>(sizes: [CGSize], variant: LumenSnapshot.Variant, registry: LumenRegistry, headerHeight: CGFloat?,
-                                           renderer: SurfaceRenderer, inspectCapture: ((NSBitmapImageRep) -> Void)? = nil, of pane: () -> Content) -> [Finding] {
+                                           renderer: SurfaceRenderer, themes: [LumenTheme] = [], inspectCapture: ((NSBitmapImageRep) -> Void)? = nil, of pane: () -> Content) -> [Finding] {
         sizes.flatMap { size -> [Finding] in
             let subject = "\(Int(size.width))×\(Int(size.height))"
-            var (image, unknown) = renderer == .window ? renderInWindow(pane(), size: size, variant: variant, registry: registry) : (nil, [])
+            var (image, unknown) = renderer == .window ? renderInWindow(pane(), size: size, variant: variant, registry: registry, themes: themes) : (nil, [])
             if image == nil {
                 // ImageRenderer, when the window drew nothing (or was asked for).
-                let (data, imageUnknown) = LumenSnapshot.render(pane(), size: size, variant: variant, registry: registry, scale: 1)
+                let (data, imageUnknown) = LumenSnapshot.render(pane(), size: size, variant: variant, registry: registry, themes: themes, scale: 1)
                 image = data.flatMap(NSBitmapImageRep.init(data:))
                 unknown.formUnion(imageUnknown)
             }
@@ -443,9 +304,9 @@ public enum LumenConformance {
     /// one pixel per point. A single cacheDisplay after layout can capture only the pane background.
     @MainActor
     private static func renderInWindow<Content: View>(_ pane: Content, size: CGSize, variant: LumenSnapshot.Variant,
-                                                      registry: LumenRegistry) -> (NSBitmapImageRep?, Set<LumenToken>) {
+                                                      registry: LumenRegistry, themes: [LumenTheme]) -> (NSBitmapImageRep?, Set<LumenToken>) {
         let (data, unknown) = LumenSnapshot.render(pane, size: size, variant: variant, registry: registry,
-                                                  scale: 1, renderer: .window)
+                                                  themes: themes, scale: 1, renderer: .window)
         guard let image = data.flatMap(NSBitmapImageRep.init(data:)), !isBlank(image) else { return (nil, unknown) }
         return (image, unknown)
     }
@@ -460,13 +321,13 @@ public enum LumenConformance {
         return true
     }
 
-    private static func describe(_ panels: LumenWorkspacePanels) -> String {
+    static func describe(_ panels: LumenWorkspacePanels) -> String {
         let shown = [panels.leading ? "sidebar" : nil, panels.bottom ? "bottom" : nil, panels.trailing ? "inspector" : nil].compactMap { $0 }
         return shown.isEmpty ? "no panels" : shown.joined(separator: " + ")
     }
 
     @MainActor
-    private final class FrameRecorder { var frame: CGRect?; var placement: LumenTopBarPlacement?; var contentFrame: CGRect?; var windowButtons: CGRect?; var hasToolbar: Bool?; var toolbarItems: [CGRect] = []; var droppedToolbarItems: [String] = []; var regionTop: CGFloat?; var truncated: Set<String> = []; var undersizedIcons: Set<String> = []; var overflowing: Set<String> = []; var columnOverflowing: Set<String> = []; var visibleTexts: Set<LumenVisibleTextEntry> = []; var backlights: Set<LumenBacklightEntry> = []; var backlightContainers: [UUID: CGRect] = [:] }
+    final class FrameRecorder { var frame: CGRect?; var placement: LumenTopBarPlacement?; var contentFrame: CGRect?; var windowButtons: CGRect?; var hasToolbar: Bool?; var toolbarItems: [CGRect] = []; var droppedToolbarItems: [String] = []; var regionTop: CGFloat?; var truncated: Set<String> = []; var undersizedIcons: Set<String> = []; var overflowing: Set<String> = []; var columnOverflowing: Set<String> = []; var visibleTexts: Set<LumenVisibleTextEntry> = []; var backlights: Set<LumenBacklightEntry> = []; var backlightContainers: [UUID: CGRect] = [:] }
 
     /// Lays the window out in a real (offscreen) window of `size` and returns where its top bar went,
     /// with where it belongs: right under the window's top safe area (the window buttons' band).
@@ -478,7 +339,7 @@ public enum LumenConformance {
 
     /// Lays `content` out in a real (offscreen) window of `size` and records what it reports.
     @MainActor
-    private static func layOut<Content: View>(_ content: Content, size: CGSize) -> (FrameRecorder, CGFloat) {
+    static func layOut<Content: View>(_ content: Content, size: CGSize) -> (FrameRecorder, CGFloat) {
         let recorder = FrameRecorder()
         let root = content
             .onPreferenceChange(LumenTopBarFrameKey.self) { frame in MainActor.assumeIsolated { recorder.frame = frame } }
@@ -530,7 +391,7 @@ public enum LumenConformance {
     /// Hosts `content` in a real (offscreen) window of `size` and lays it out; close the window when
     /// done. Used for geometry checks; pixel scans use the settled snapshot renderer.
     @MainActor
-    private static func offscreenWindow(_ content: AnyView, size: CGSize, appearance: NSAppearance? = nil) -> (NSWindow, NSHostingView<AnyView>) {
+    static func offscreenWindow(_ content: AnyView, size: CGSize, appearance: NSAppearance? = nil) -> (NSWindow, NSHostingView<AnyView>) {
         let host = NSHostingView(rootView: content)
         host.sizingOptions = []
         // A SwiftUI scene would install the views' toolbar items (the unified top bar's) in the

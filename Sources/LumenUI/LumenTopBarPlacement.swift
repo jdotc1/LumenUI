@@ -305,11 +305,13 @@ public struct LumenWorkspaceToolbar<AppMark: View, Project: View, Tasks: View, C
 public struct LumenToolbarStatus: View {
     private let activity: LumenActivity?
     private let width: CGFloat
+    private var flexibleMinimum: CGFloat? = nil
 
     @Environment(\.lumenMetrics) private var metrics
     @Environment(\.lumenToolbarCompact) private var compact
     @Environment(\.lumenToolbarStatusRoom) private var room
     @State private var needed: CGFloat = 0
+    @State private var nativeRoom: CGFloat?
 
     /// The narrowest the capsule gets before it hides (it's temporary; the panels matter more).
     static var minimumWidth: CGFloat { LumenActivityStatus.minimumWidth }
@@ -320,6 +322,21 @@ public struct LumenToolbarStatus: View {
         self.width = width
     }
 
+    /// A content-sized window-toolbar status. The full label and percentage determine its width;
+    /// native toolbar item frames limit it to the room left by the other items. Only then does the
+    /// label truncate in the middle. At `minWidth`, AppKit owns any further overflow.
+    public init(_ activity: LumenActivity?, minWidth: CGFloat) {
+        self.activity = activity
+        self.width = 0
+        self.flexibleMinimum = max(0, minWidth)
+    }
+
+    /// Retained for source compatibility; the label now determines the preferred width.
+    @available(*, deprecated, message: "Use init(_:minWidth:); the status measures its content and available toolbar room.")
+    public init(_ activity: LumenActivity?, idealWidth: CGFloat, minWidth: CGFloat) {
+        self.init(activity, minWidth: minWidth)
+    }
+
     private var shown: LumenActivity? {
         guard let activity else { return nil }
         if case .idle = activity { return nil }
@@ -327,7 +344,25 @@ public struct LumenToolbarStatus: View {
     }
 
     public var body: some View {
-        if compact {
+        if let flexibleMinimum {
+            if let shown {
+                let decoration = metrics.spacing.s4 + metrics.stroke.hairline + 2 * metrics.spacing.s1
+                let available = (room ?? nativeRoom).map { max(0, $0 - decoration) }
+                // Each rendered text run can round outward independently at a pixel boundary.
+                let preferred = max(flexibleMinimum, needed.rounded(.up) + 1)
+                let fitted = max(flexibleMinimum, min(preferred, available ?? preferred))
+                HStack(spacing: metrics.spacing.s4) {
+                    LumenToolbarDivider()
+                    LumenActivityStatus(shown, idealWidth: fitted, minWidth: flexibleMinimum)
+                }
+                .background { naturalWidth(of: shown) }
+                .background {
+                    if room == nil {
+                        LumenNativeStatusRoom(minimum: flexibleMinimum + decoration, trailingGutter: metrics.spacing.s4, room: $nativeRoom)
+                    }
+                }
+            }
+        } else if compact {
             // In the window toolbar: its preferred `width`, growing past it up to the room the other
             // items leave (less the slash) when the label is longer, and hidden when the label
             // wouldn't fit whole (PRINCIPLES §6: never truncated) or before the room is known.
@@ -365,7 +400,8 @@ public struct LumenToolbarStatus: View {
         HStack(spacing: metrics.spacing.s3) {
             Color.clear.frame(width: metrics.iconSize.regular, height: 1)
             Text(activity.label).font(metrics.typography.callout)
-            if case .working(_, _?) = activity {
+            if flexibleMinimum != nil { Spacer(minLength: 0).frame(width: 0) }
+            if case .working(_, .some) = activity {
                 Text("100%").font(metrics.typography.caption.monospacedDigit())
             }
         }

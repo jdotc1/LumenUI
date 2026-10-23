@@ -8,7 +8,10 @@ import UniformTypeIdentifiers
 /// theme picker for each extra surface the app declares, and the library actions (customize,
 /// import, reveal, duplicate, reload). Cards offer export, share and Move to Trash.
 public struct LumenThemeGallery: View {
-    let store: LumenThemeStore
+    /// The store passed to `init(store:)`; `nil` uses the window's (`\.lumenStore`).
+    private let explicitStore: LumenThemeStore?
+    @Environment(\.lumenStore) private var environmentStore
+    var store: LumenThemeStore { explicitStore ?? environmentStore }
     @State private var editingBase: LumenTheme?
     @State private var isImporting = false
     @State private var exporting: LumenThemeFile?
@@ -31,8 +34,15 @@ public struct LumenThemeGallery: View {
         var id: String { title }
     }
 
+    /// A gallery for the store of the window it appears in: the one `.lumenPaletteRoot(store:)`
+    /// injected, so a second store's window offers and changes that store's themes.
+    public init() {
+        explicitStore = nil
+    }
+
+    /// A gallery for `store`. Without an argument, `init()` (the window's store) is chosen.
     public init(store: LumenThemeStore = .active) {
-        self.store = store
+        explicitStore = store
     }
 
     private var columns: [GridItem] {

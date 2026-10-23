@@ -253,9 +253,12 @@ public struct LumenCommandPalette: View {
     @Environment(\.lumenMetrics) private var metrics
     @Environment(\.lumenDensity) private var density
     @Environment(\.lumenRendersOffscreen) private var rendersOffscreen
+    @Environment(\.lumenResolvedChromeStyle) private var chromeStyle
 
     /// The widest the palette gets; in a narrower window it narrows to fit (the host keeps a margin).
     static let width: CGFloat = 580
+    /// The result list's tallest, before it scrolls.
+    static let listMaximumHeight: CGFloat = 380
 
     /// - Parameter recentsKey: where recent commands are kept; `nil` keeps none.
     public init(_ commands: [LumenCommand], query: String = "", recentsKey: String? = "lumen.commandPalette.recents",
@@ -345,14 +348,35 @@ public struct LumenCommandPalette: View {
             Spacer(minLength: 0)
         }
         .padding(scopeRim)
-        .background(palette[.bgInsetRaised].opacity(0.6), in: .capsule)
+        .background { scopeTrack }
         .padding(.horizontal, containerInset)
         .padding(.bottom, metrics.spacing.s3)
+    }
+
+    /// `.drawn`: an inset capsule in `bg.insetRaised`. `.glass`: a hairline capsule with no fill,
+    /// so nothing inside the palette paints a flat band over the glass; grouping comes from the
+    /// rim, the spacing and the pills themselves (C1 fix round, GLASS.md).
+    @ViewBuilder private var scopeTrack: some View {
+        if chromeStyle == .glass {
+            Capsule().strokeBorder(palette[.menuSeparator], lineWidth: metrics.stroke.hairline)
+        } else {
+            Capsule().fill(palette[.bgInsetRaised].opacity(0.6))
+        }
     }
 
     /// Static content in place of the field and scroll view: in snapshots, and wherever an app
     /// renders offscreen (`.lumenRendersOffscreen()`).
     private var drawsStatic: Bool { isSnapshot || rendersOffscreen }
+
+    /// `menu.background` in `.drawn`; system glass in `.glass` (PRINCIPLES §11).
+    @ViewBuilder private var paletteGround: some View {
+        let shape = RoundedRectangle(cornerRadius: metrics.radius.xl, style: .continuous)
+        if chromeStyle == .glass, #available(macOS 26, *) {
+            Color.clear.glassEffect(.regular, in: shape)
+        } else {
+            shape.fill(palette[.menuBackground])
+        }
+    }
 
     public var body: some View {
         let rows = rows
@@ -387,9 +411,7 @@ public struct LumenCommandPalette: View {
                 results(rows)
             } else {
                 ScrollViewReader { proxy in
-                    ScrollView { results(rows) }
-                        .frame(maxHeight: 380)
-                        .fixedSize(horizontal: false, vertical: true)
+                    LumenCappedHeight(maximum: Self.listMaximumHeight) { ScrollView { results(rows) } }
                         .onChange(of: highlighted) { _, id in if let id { proxy.scrollTo(id) } }
                 }
             }
@@ -405,8 +427,14 @@ public struct LumenCommandPalette: View {
         }
         .frame(minWidth: 0, idealWidth: Self.width, maxWidth: Self.width)
         .lumenRaisedGround()
-        .background(palette[.menuBackground], in: .rect(cornerRadius: metrics.radius.xl, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: metrics.radius.xl, style: .continuous).strokeBorder(palette[.borderDefault], lineWidth: metrics.stroke.hairline) }
+        // `.glass` (PRINCIPLES §11): system glass in the same shape, no hairline (glass draws its own
+        // rim). Switched inside the closures so the rows keep their state when the style changes.
+        .background { paletteGround }
+        .overlay {
+            if chromeStyle == .drawn {
+                RoundedRectangle(cornerRadius: metrics.radius.xl, style: .continuous).strokeBorder(palette[.borderDefault], lineWidth: metrics.stroke.hairline)
+            }
+        }
         .lumenElevation(.popover)
         .onAppear {
             if highlighted == nil { highlighted = rows.first { $0.command.isEnabled }?.command.id }
@@ -600,6 +628,24 @@ public struct LumenCommandPalette: View {
         keyCommands = commands
         cachedRowsKey = LumenCommandPalette.rowsKey(commands)
         return cachedRowsKey
+    }
+}
+
+/// The result list's height: its content's, up to `maximum` and never more than it's offered, so
+/// the palette shrinks in a short window and scrolls instead of being cut off. `.frame(maxHeight:)`
+/// under `.fixedSize` held the list at its ideal height whatever it was offered: 30 commands
+/// overflowed a 580×420 frame by 42 pt (C1 fix round).
+struct LumenCappedHeight: Layout {
+    let maximum: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let natural = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? natural.width, height: min(natural.height, maximum, proposal.height ?? .infinity))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
     }
 }
 

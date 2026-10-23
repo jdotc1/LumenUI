@@ -103,6 +103,7 @@ public struct LumenTopBar<Leading: View, Center: View, Trailing: View>: View {
     @Environment(\.lumenPalette) private var palette
     @Environment(\.lumenMetrics) private var metrics
     @Environment(\.lumenTopBarHostsInToolbar) private var hostsInToolbar
+    @Environment(\.lumenResolvedChromeStyle) private var chromeStyle
     @Environment(\.lumenTopBarWidth) private var barWidth
     @State private var leadingWidth: CGFloat = 0
     @State private var trailingWidth: CGFloat = 0
@@ -134,13 +135,14 @@ public struct LumenTopBar<Leading: View, Center: View, Trailing: View>: View {
     /// gives it the low visibility priority) and the panels and leading content are kept.
     @ToolbarContentBuilder private var toolbarItems: some ToolbarContent {
         if #available(macOS 26, *) {
-            // Bare on the glow: no shared glass platter behind them.
-            ToolbarItem(placement: .navigation) { leadingItem }.sharedBackgroundVisibility(.hidden)
+            // Bare on the glow in `.drawn`: no shared glass platter behind them. `.glass` lets the
+            // system's platter show (PRINCIPLES §11).
+            ToolbarItem(placement: .navigation) { leadingItem }.lumenToolbarPlatter(chromeStyle)
             if Center.self != EmptyView.self {
-                ToolbarItem(placement: .navigation) { centerItem }.sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .navigation) { centerItem }.lumenToolbarPlatter(chromeStyle)
             }
             ToolbarSpacer(.flexible)
-            ToolbarItem(placement: .primaryAction) { trailingItem }.sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) { trailingItem }.lumenToolbarPlatter(chromeStyle)
         } else {
             ToolbarItem(placement: .navigation) { leadingItem }
             if Center.self != EmptyView.self {

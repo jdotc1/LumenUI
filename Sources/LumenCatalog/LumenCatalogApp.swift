@@ -31,8 +31,16 @@ struct LumenCatalogApp: App {
                 defaultsSuiteName: isPreview ? "com.jdotc1.lumen.catalog.semantic-preview" : "com.lumen.catalog.demo")
         )
         LumenThemeStore.install(store, watchesThemesFolder: false)
-        // `LUMEN_CATALOG_THEME=lumen.ultraviolet` picks a theme (for screenshots).
-        if let theme = ProcessInfo.processInfo.environment["LUMEN_CATALOG_THEME"] { store.select(theme) }
+        // `LUMEN_CATALOG_CHROME=glass|drawn` sets the chrome style for this launch (for screenshots):
+        // `CatalogChromeOverride`, never saved. The toolbar's Glass toggle clears it and saves.
+        // `LUMEN_CATALOG_THEME=lumen.ultraviolet` picks a theme for this launch, also unsaved: the
+        // saved choice is put back, so the next plain launch shows the user's theme.
+        if let theme = ProcessInfo.processInfo.environment["LUMEN_CATALOG_THEME"] {
+            let key = store.configuration.selectionDefaultsKey(for: .window)
+            let saved = store.configuration.defaults.object(forKey: key)
+            store.select(theme)
+            if let saved { store.configuration.defaults.set(saved, forKey: key) } else { store.configuration.defaults.removeObject(forKey: key) }
+        }
         LumenGlyph.register([.catalogPage])
         _store = State(initialValue: store)
     }
@@ -43,6 +51,7 @@ struct LumenCatalogApp: App {
             CatalogView()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogChromeRoot())
                 .lumenMetrics(.standard)
                 .modifier(CatalogWindowMinimum())
                 .onAppear {
@@ -59,6 +68,7 @@ struct LumenCatalogApp: App {
             WorkspaceDemo()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogChromeRoot())
                 .lumenMetrics(.standard)
                 .frame(minWidth: 1000, minHeight: 660)
         }
@@ -69,6 +79,7 @@ struct LumenCatalogApp: App {
             SplitWorkspaceDemo()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogChromeRoot())
                 .lumenMetrics(.standard)
         }
         .windowStyle(.hiddenTitleBar)
@@ -79,6 +90,7 @@ struct LumenCatalogApp: App {
             WorkbenchRehearsal()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogChromeRoot())
                 .lumenMetrics(.standard)
         }
         .windowStyle(.hiddenTitleBar)
@@ -90,6 +102,7 @@ struct LumenCatalogApp: App {
             CatalogWelcome()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogChromeRoot())
                 .lumenMetrics(.standard)
         }
         .windowStyle(.hiddenTitleBar)
@@ -100,8 +113,59 @@ struct LumenCatalogApp: App {
             CatalogSettings()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogChromeRoot())
                 .frame(width: 620, height: 460)
         }
+    }
+}
+
+// MARK: Chrome style
+
+/// The Catalog's chrome style (PRINCIPLES §11), saved in the demo suite so every window shares it.
+enum CatalogChrome {
+    static let key = "catalog.chromeStyle"
+    static var defaults: UserDefaults { UserDefaults(suiteName: "com.lumen.catalog.demo") ?? .standard }
+}
+
+/// `LUMEN_CATALOG_CHROME`'s style for this launch, ahead of the saved one and never written to
+/// defaults, so a screenshot run doesn't change the user's next launch. The Glass toggle clears it.
+@Observable @MainActor
+final class CatalogChromeOverride {
+    static let shared = CatalogChromeOverride()
+    var style: LumenChromeStyle? = ProcessInfo.processInfo.environment["LUMEN_CATALOG_CHROME"].map(LumenChromeStyle.resolve)
+}
+
+/// Applies the chrome style to a window's root: the launch override, else the saved style.
+struct CatalogChromeRoot: ViewModifier {
+    @AppStorage(CatalogChrome.key, store: CatalogChrome.defaults) private var raw = LumenChromeStyle.drawn.rawValue
+    @State private var launch = CatalogChromeOverride.shared
+    func body(content: Content) -> some View { content.lumenChromeStyle(launch.style ?? LumenChromeStyle.resolve(raw)) }
+}
+
+/// The toolbar's Glass toggle: switches every open window between `.drawn` and `.glass`. Disabled
+/// below macOS 26, where `.glass` draws as `.drawn`.
+struct CatalogChromeToggle: View {
+    @AppStorage(CatalogChrome.key, store: CatalogChrome.defaults) private var raw = LumenChromeStyle.drawn.rawValue
+    @Environment(\.lumenPalette) private var palette
+    @Environment(\.lumenResolvedChromeStyle) private var resolved
+
+    private var isGlass: Bool { (CatalogChromeOverride.shared.style ?? LumenChromeStyle.resolve(raw)) == .glass }
+
+    var body: some View {
+        let title = isGlass ? "Use Drawn Chrome" : "Use Glass Chrome"
+        Button(title, systemImage: isGlass ? "square.on.square.intersection.dashed" : "square.on.square") {
+            let next = (isGlass ? LumenChromeStyle.drawn : .glass).rawValue
+            CatalogChromeOverride.shared.style = nil   // the user's choice replaces the launch override
+            raw = next
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(LumenToolbarIconButtonStyle())
+        .foregroundStyle(isGlass ? palette[.layoutToggleOn] : palette[.fgSecondary])
+        .lumenIconOnlyControl(title)
+        .lumenFocusRing()
+        .disabled(!LumenChromeStyle.systemSupportsGlass)
+        .help(!LumenChromeStyle.systemSupportsGlass ? "Glass chrome needs macOS 26 or later"
+              : isGlass && resolved == .drawn ? "Glass chrome (drawn while Reduce Transparency is on)" : title)
     }
 }
 
@@ -149,7 +213,7 @@ enum CatalogPage: String, CaseIterable, Identifiable {
     case overview = "Overview", welcome = "Welcome", toolbar = "Toolbar", tiles = "Icon Tiles", menus = "Menus",
          settings = "Settings", popovers = "Popovers", glyphs = "Glyphs", components = "Components",
          forms = "Forms & Controls", search = "Search & Navigation", data = "Data & Git", browse = "Browse", workspace = "Workspace",
-         states = "States & Rows", debugger = "Debugger", editor = "Editor", sheets = "Sheets & Settings", themes = "Themes"
+         states = "States & Rows", debugger = "Debugger", editor = "Editor", sheets = "Sheets & Settings", themes = "Themes", conformance = "Conformance"
     var id: String { rawValue }
 
     var symbol: String {
@@ -167,6 +231,7 @@ enum CatalogPage: String, CaseIterable, Identifiable {
         case .browse: "square.grid.2x2.fill"
         case .workspace: "rectangle.split.3x1.fill"
         case .themes: "paintpalette.fill"
+        case .conformance: "checkmark.shield"
         case .popovers: "text.bubble.fill"
         case .glyphs: "lumen.lens"
         case .states: "list.bullet.rectangle.fill"
@@ -191,6 +256,7 @@ enum CatalogPage: String, CaseIterable, Identifiable {
         case .browse: .hueYellow
         case .workspace: .hueViolet
         case .themes: .hueOrange
+        case .conformance: .hueGreen
         case .popovers: .hueTeal
         case .glyphs: .hueIndigo
         case .states: .hueRed
@@ -203,6 +269,9 @@ enum CatalogPage: String, CaseIterable, Identifiable {
 
 struct CatalogView: View {
     private let forceLegacyColumns: Bool
+    /// The window's store, for the palette's theme commands.
+    @Environment(\.lumenStore) var lumenStore
+    @Environment(\.lumenResolvedChromeStyle) private var chromeStyle
 
     init(useLegacyColumns: Bool = false) {
         forceLegacyColumns = useLegacyColumns
@@ -219,6 +288,7 @@ struct CatalogView: View {
     @State private var job: Task<Void, Never>?
     @State private var showsPalette = false
     @State private var showsSidebar = true
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     /// `LUMEN_CATALOG_INSPECTOR=0` starts with the inspector hidden.
     @State private var showsInspector = ProcessInfo.processInfo.environment["LUMEN_CATALOG_INSPECTOR"] != "0"
     /// Page colors picked in the inspector; they recolor the sidebar tiles live.
@@ -280,8 +350,9 @@ struct CatalogView: View {
         if usesLegacyColumns {
             legacyColumns
         } else {
-            NavigationSplitView {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebarContent
+                    .lumenSidebarToggle(columnVisibility: $columnVisibility)
                     .navigationSplitViewColumnWidth(min: CatalogLayout.sidebarMinWidth, ideal: CatalogLayout.sidebarIdealWidth, max: 300)
             } detail: {
                 pageContent
@@ -293,6 +364,7 @@ struct CatalogView: View {
 
     var body: some View {
         columns
+        .background(CatalogToolbarReport())
         .navigationTitle("")
         .lumenCommandPalette(isPresented: $showsPalette, commands: paletteCommands, scopes: CatalogPalette.scopes,
                              recentsKey: "catalog.palette.recents", query: CatalogPalette.query, shortcut: nil)
@@ -301,14 +373,23 @@ struct CatalogView: View {
                 ToolbarItem(placement: .navigation) {
                     LumenPanelToggle(edge: .leading, isOn: $showsSidebar, registersShortcut: false)
                 }
+                .lumenToolbarPlatter(chromeStyle)
             }
+            // Each item takes the chrome style's platter rule: bare in `.drawn`, the system's under `.glass`.
             ToolbarItem(placement: .navigation) {
                 LumenToolbarIdentity("Lumen Catalog", subtitle: "~/Developer/Lumen", systemImage: "lumen.lens", hue: .hueViolet)
             }
+            .lumenToolbarPlatter(chromeStyle)
             // Nothing while idle, as the unified bar's status (§9 item 4): no "Ready" pill.
-            ToolbarItem(placement: .principal) { LumenToolbarStatus(activity, width: 300) }
-            ToolbarItem(placement: .primaryAction) { LumenTaskCluster(tasks, activity: activity) }
+            // Native principal items are centered independently of the sidebar and identity.
+            // Follow the identity, using the same leading placement as LumenTopBar's status.
+            ToolbarItem(id: "catalog.status", placement: .navigation) {
+                LumenToolbarStatus(activity, minWidth: 180)
+            }.lumenToolbarPlatter(chromeStyle)
+            ToolbarItem(placement: .primaryAction) { LumenTaskCluster(tasks, activity: activity) }.lumenToolbarPlatter(chromeStyle)
+            ToolbarItem(placement: .primaryAction) { CatalogChromeToggle() }.lumenToolbarPlatter(chromeStyle)
             ToolbarItem(placement: .primaryAction) { LumenInspectorToggle(isPresented: $showsInspector, registersShortcut: false) }
+                .lumenToolbarPlatter(chromeStyle)
         }
         .task {
             // `LUMEN_CATALOG_WELCOME=1` opens the welcome window; `LUMEN_CATALOG_ACTIVITY=working`
@@ -421,6 +502,7 @@ struct CatalogPageView: View {
             case .editor: EditorPage()
             case .sheets: SheetsPage()
             case .themes: ThemesPage()
+            case .conformance: ConformancePage()
             }
         }
         .frame(maxWidth: CatalogLayout.contentMaxWidth(for: page), alignment: .leading)
@@ -449,10 +531,9 @@ enum CatalogPalette {
         }
     }
 
-    /// Theme commands, shared by both windows.
-    @MainActor static func themes() -> [LumenCommand] {
-        let store = LumenThemeStore.active
-        return store.themes.map { theme in
+    /// Theme commands for `store` (the window's), shared by both windows.
+    @MainActor static func themes(store: LumenThemeStore) -> [LumenCommand] {
+        store.themes.map { theme in
             LumenCommand(id: "theme.\(theme.id)", "Use \(theme.name) Theme", subtitle: theme.summary, category: "Theme",
                          systemImage: "paintpalette.fill", hue: .hueOrange, keywords: ["appearance", "colors"],
                          isEnabled: store.theme(for: .window).id != theme.id) { store.select(theme.id) }
@@ -482,7 +563,7 @@ extension CatalogView {
             LumenCommand(id: "task.\(task.title)", task.title, category: "Tasks", systemImage: task.systemImage,
                          hue: task.role == .stop ? .hueRed : task.role == .start ? .hueGreen : .hueIndigo, shortcut: task.shortcut,
                          isEnabled: task.role == .stop ? activity.isBusy : !activity.isBusy || task.role == .normal, perform: task.perform)
-        } + CatalogPalette.themes()
+        } + CatalogPalette.themes(store: lumenStore)
     }
 
     /// Build, Run and Stop drive the toolbar's live activity, as a real app's tasks would.
@@ -531,7 +612,56 @@ struct ThemesPage: View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(title: "Themes", summary: "Every theme the app offers, as a miniature of its window. Click one to use it; drop a theme file here to add it.")
             LumenThemeGallery()
+            PageHeader(title: "Every built-in theme, live", summary: "The same components drawn by each built-in theme at once. Each preview has a store of its own; the app’s theme doesn’t change.")
+                .padding(.top, 12)
+            ThemePreviewGrid()
         }
+    }
+}
+
+/// One live preview per built-in theme, each through its own non-persisting store
+/// (`LumenThemeStore(configuration:registry:)`), so several themes draw side by side in one window
+/// without touching the shared store (roadmap A2).
+struct ThemePreviewGrid: View {
+    @Environment(\.lumenStore) private var appStore
+    /// Built once: a store per built-in theme, selected at creation.
+    @State private var previews: [LumenThemeStore] = []
+
+    static func previewStores(for registry: LumenRegistry) -> [LumenThemeStore] {
+        registry.galleryThemes.map { theme in
+            LumenThemeStore(configuration: LumenStoreConfiguration(appName: "LumenCatalogPreview",
+                                                                   themesDirectory: URL(fileURLWithPath: "/dev/null/lumen-catalog-preview"),
+                                                                   defaultThemeID: theme.id),
+                            registry: registry, themes: registry.galleryThemes)
+        }
+    }
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
+            ForEach(Array(previews.enumerated()), id: \.offset) { _, store in
+                VStack(alignment: .leading, spacing: 6) {
+                    CatalogScaledPreview(width: 620, height: 360) {
+                        ThemePreviewCanvas { LumenShowcase() }
+                            .lumenPaletteRoot(store: store, windowChrome: false)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    Text(store.theme(for: .window).name).font(.callout.weight(.medium))
+                }
+            }
+        }
+        .onAppear {
+            if previews.isEmpty { previews = Self.previewStores(for: appStore.registry) }
+        }
+    }
+}
+
+/// A preview's ground, in the preview store's canvas color.
+private struct ThemePreviewCanvas<Content: View>: View {
+    @Environment(\.lumenPalette) private var palette
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content.background(palette[.bgCanvas])
     }
 }
 
@@ -550,7 +680,7 @@ struct CatalogInspector: View {
     @Binding var hue: LumenToken
     @SceneStorage("inspector.theme") private var themeExpanded = true
     @SceneStorage("inspector.page") private var pageExpanded = true
-    private var store: LumenThemeStore { .active }
+    @Environment(\.lumenStore) private var store
 
     var body: some View {
         LumenInspectorHeader(page.rawValue, subtitle: "Catalog page", systemImage: page.symbol, hue: hue)
@@ -1032,6 +1162,8 @@ struct NotificationSettings: View {
 /// sections, document tabs, status bar, a bottom panel with console tabs, a dock zone, and the new menu.
 struct WorkspaceDemo: View {
     private static let env = ProcessInfo.processInfo.environment
+    @Environment(\.lumenStore) private var lumenStore
+    @Environment(\.lumenResolvedChromeStyle) private var chromeStyle
     @State private var columns: NavigationSplitViewVisibility = .all
     @State private var showsPanel = true
     @State private var showsDock = env["LUMEN_CATALOG_DOCK"] == "1"
@@ -1076,6 +1208,7 @@ struct WorkspaceDemo: View {
             ToolbarItem(placement: .navigation) {
                 LumenToolbarBreadcrumb(["Lumen"], systemImage: "lumen.lens", hue: .hueViolet)
             }
+            .lumenToolbarPlatter(chromeStyle)
             ToolbarItem(placement: .primaryAction) {
                 // New right beside the toggles, in one item (decision 2).
                 HStack(spacing: 2) {
@@ -1090,6 +1223,7 @@ struct WorkspaceDemo: View {
                     ])
                 }
             }
+            .lumenToolbarPlatter(chromeStyle)
         }
         .focusedSceneValue(\.catalogNewDocument, { documents.newDocument() })
         .navigationTitle("")
@@ -1148,7 +1282,7 @@ struct WorkspaceDemo: View {
         }
         let clear = LumenCommand(id: "console.clear", "Clear Extension Console", category: "Panel", systemImage: "trash",
                                  hue: .hueRed, keywords: ["log"], isEnabled: !log.isEmpty) { log = [] }
-        return panels + documentCommands + consoles + [clear] + create + CatalogPalette.themes()
+        return panels + documentCommands + consoles + [clear] + create + CatalogPalette.themes(store: lumenStore)
     }
 
     private var navigator: Binding<Bool> {

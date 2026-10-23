@@ -5,8 +5,10 @@ import SwiftUI
 
 /// Renders SwiftUI views to PNG under a chosen theme and compares them with golden images.
 ///
-/// Each render uses a throwaway, non-persisting store installed as the active store only for the
-/// render, so the user's selection is never touched. Subjects come from the caller; Lumen ships
+/// Each variant render uses a throwaway, non-persisting store installed as the active store only
+/// for the render, so the user's selection is never touched. The store-based renders
+/// (`render(_:size:store:colorScheme:...)`) draw against a store the caller built, given to the
+/// view only through the environment, as a second store's window gets it. Subjects come from the caller; Lumen ships
 /// none. A test typically does:
 ///
 /// ```swift
@@ -126,86 +128,147 @@ public enum LumenSnapshot {
 
     private static func renderPNG<Content: View>(_ view: Content, size: CGSize, variant: Variant, store: LumenThemeStore,
                                                  metrics: LumenMetrics, scale: CGFloat) -> Data? {
-        return LumenThemeStore.withActiveStore(store) {
-            let palette = store.resolvedPalette()
-            let content = view
-                .frame(width: size.width, height: size.height)
-                .background(palette[.bgCanvas])
-                .environment(\.colorScheme, variant.colorScheme)
-                .environment(\.lumenPalette, palette)
-                .environment(\.lumenStore, store)
-                .environment(\.lumenMetrics, metrics)
-                .environment(\.lumenRendersOffscreen, true)
-                .tint(palette[.accent])   // as `.lumenPaletteRoot()` tints a real window's native controls
-            let renderer = ImageRenderer(content: content)
-            renderer.scale = scale
-            guard let image = renderer.cgImage else { return nil }
-            return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+        LumenThemeStore.withActiveStore(store) {
+            renderPNG(view, size: size, colorScheme: variant.colorScheme, store: store, metrics: metrics, scale: scale)
         }
+    }
+
+    private static func renderPNG<Content: View>(_ view: Content, size: CGSize, colorScheme: ColorScheme, store: LumenThemeStore,
+                                                 metrics: LumenMetrics, scale: CGFloat) -> Data? {
+        let palette = store.resolvedPalette()
+        let content = view
+            .frame(width: size.width, height: size.height)
+            .background(palette[.bgCanvas])
+            .environment(\.colorScheme, colorScheme)
+            .environment(\.lumenPalette, palette)
+            .environment(\.lumenStore, store)
+            .environment(\.lumenMetrics, metrics)
+            .environment(\.lumenRendersOffscreen, true)
+            .tint(palette[.accent])   // as `.lumenPaletteRoot()` tints a real window's native controls
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = scale
+        guard let image = renderer.cgImage else { return nil }
+        return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
     }
 
     @MainActor
     private static func renderWindowPNG<Content: View>(_ view: Content, size: CGSize, variant: Variant, store: LumenThemeStore,
                                                        metrics: LumenMetrics, scale: CGFloat) -> Data? {
         LumenThemeStore.withActiveStore(store) {
-            MainActor.assumeIsolated { () -> Data? in
-                let palette = store.resolvedPalette()
-                let content = view
-                    .frame(width: size.width, height: size.height)
-                    .background(palette[.bgCanvas])
-                    .environment(\.colorScheme, variant.colorScheme)
-                    .environment(\.lumenPalette, palette)
-                    .environment(\.lumenStore, store)
-                    .environment(\.lumenMetrics, metrics)
-                    .environment(\.lumenRendersOffscreen, false)
-                    // Round layout to the capture's pixel grid, not the display's.
-                    .environment(\.displayScale, scale)
-                    // The window is never key; draw as the key window does, as the image renderer does.
-                    .environment(\.controlActiveState, .key)
-                    .tint(palette[.accent])
-                let host = NSHostingView(rootView: AnyView(content))
-                host.sizingOptions = []
-                let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless],
-                                      backing: .buffered, defer: false)
-                window.isReleasedWhenClosed = false
-                window.appearance = NSAppearance(named: variant.colorScheme == .dark ? .darkAqua : .aqua)
-                window.contentView = host
-                window.setContentSize(size)
-                defer { window.close() }
-                // Preference-driven layout (measured widths) and AppKit text fields take a few passes
-                // to settle: capture until two captures in a row are identical (at most ~1.2 s).
-                @MainActor func settle(_ passes: Int) {
-                    for _ in 0..<passes {
-                        host.layoutSubtreeIfNeeded()
-                        host.displayIfNeeded()
-                        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-                    }
-                }
-                // Capture into a bitmap of exactly `size` × `scale` pixels, whatever the display's
-                // backing scale: a 1x screen or a headless runner draws the same pixels as a Retina one.
-                let width = Int((size.width * scale).rounded()), height = Int((size.height * scale).rounded())
-                let colorSpace = host.bitmapImageRepForCachingDisplay(in: host.bounds)?.colorSpace ?? .sRGB
-                @MainActor func capture() -> NSBitmapImageRep? {
-                    guard let blank = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
-                                                       bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                                       colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-                          let rep = blank.retagging(with: colorSpace) else { return nil }
-                    rep.size = host.bounds.size
-                    host.cacheDisplay(in: host.bounds, to: rep)
-                    return rep
-                }
-                settle(12)
-                var previous = capture()
-                var rep = previous
-                for _ in 0..<8 {
-                    settle(6)
-                    rep = capture()
-                    if let rep, let previous, rep.tiffRepresentation == previous.tiffRepresentation { break }
-                    previous = rep
-                }
-                return rep?.representation(using: .png, properties: [:])
+            MainActor.assumeIsolated {
+                renderWindowPNG(view, size: size, colorScheme: variant.colorScheme, store: store, metrics: metrics, scale: scale)
             }
         }
+    }
+
+    @MainActor
+    private static func renderWindowPNG<Content: View>(_ view: Content, size: CGSize, colorScheme: ColorScheme,
+                                                       store: LumenThemeStore, metrics: LumenMetrics, scale: CGFloat) -> Data? {
+        let palette = store.resolvedPalette()
+        let content = view
+            .frame(width: size.width, height: size.height)
+            .background(palette[.bgCanvas])
+            .environment(\.colorScheme, colorScheme)
+            .environment(\.lumenPalette, palette)
+            .environment(\.lumenStore, store)
+            .environment(\.lumenMetrics, metrics)
+            .environment(\.lumenRendersOffscreen, false)
+            // Round layout to the capture's pixel grid, not the display's.
+            .environment(\.displayScale, scale)
+            // The window is never key; draw as the key window does, as the image renderer does.
+            .environment(\.controlActiveState, .key)
+            .tint(palette[.accent])
+        let host = NSHostingView(rootView: AnyView(content))
+        host.sizingOptions = []
+        let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+        window.contentView = host
+        window.setContentSize(size)
+        defer { window.close() }
+        // Preference-driven layout (measured widths) and AppKit text fields take a few passes
+        // to settle: capture until two captures in a row are identical (at most ~1.2 s).
+        @MainActor func settle(_ passes: Int) {
+            for _ in 0..<passes {
+                host.layoutSubtreeIfNeeded()
+                host.displayIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+            }
+        }
+        // Capture into a bitmap of exactly `size` × `scale` pixels, whatever the display's
+        // backing scale: a 1x screen or a headless runner draws the same pixels as a Retina one.
+        let width = Int((size.width * scale).rounded()), height = Int((size.height * scale).rounded())
+        let colorSpace = host.bitmapImageRepForCachingDisplay(in: host.bounds)?.colorSpace ?? .sRGB
+        @MainActor func capture() -> NSBitmapImageRep? {
+            guard let blank = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+                                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                               colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+                  let rep = blank.retagging(with: colorSpace) else { return nil }
+            rep.size = host.bounds.size
+            host.cacheDisplay(in: host.bounds, to: rep)
+            return rep
+        }
+        settle(12)
+        var previous = capture()
+        var rep = previous
+        for _ in 0..<8 {
+            settle(6)
+            rep = capture()
+            if let rep, let previous, rep.tiffRepresentation == previous.tiffRepresentation { break }
+            previous = rep
+        }
+        return rep?.representation(using: .png, properties: [:])
+    }
+
+    // MARK: Rendering against a given store
+
+    /// The variant `store` draws: its window theme, `colorScheme`, and the theme of each extra
+    /// surface that differs from the window's. Names the goldens of store-based renders.
+    public static func variant(of store: LumenThemeStore, colorScheme: ColorScheme) -> Variant {
+        let window = store.theme(for: .window).id
+        var surfaces: [LumenSurface: String] = [:]
+        for surface in store.registry.surfaces where surface != .window {
+            let id = store.theme(for: surface).id
+            if id != window { surfaces[surface] = id }
+        }
+        return Variant(themeID: window, colorScheme: colorScheme, surfaceThemeIDs: surfaces)
+    }
+
+    /// The view rendered against `store` as it is (its selections and themes), and the tokens it
+    /// drew that the store's registry doesn't know.
+    ///
+    /// Unlike the variant renders, `store` is *not* made the active store: the view gets it only
+    /// through the environment (`\.lumenStore`, `\.lumenPalette`), as a second store's window
+    /// does. A view that still reads the shared store (`Lumen.color(_:)`, `.lumen(_:)`) draws the
+    /// shared store's colors here, so a golden shows it.
+    public static func render<Content: View>(_ view: Content, size: CGSize, store: LumenThemeStore, colorScheme: ColorScheme,
+                                             metrics: LumenMetrics = .standard, scale: CGFloat = 2,
+                                             renderer: Renderer = .image) -> (png: Data?, unknownTokens: Set<LumenToken>) {
+        let png: Data?
+        switch renderer {
+        case .image: png = renderPNG(view, size: size, colorScheme: colorScheme, store: store, metrics: metrics, scale: scale)
+        case .window: png = renderWindowPNG(view, size: size, colorScheme: colorScheme, store: store, metrics: metrics, scale: scale)
+        }
+        return (png, store.unknownTokens)
+    }
+
+    /// `render(_:size:store:colorScheme:metrics:scale:renderer:)` as PNG.
+    public static func png<Content: View>(of view: Content, size: CGSize, store: LumenThemeStore, colorScheme: ColorScheme,
+                                          metrics: LumenMetrics = .standard, scale: CGFloat = 2,
+                                          renderer: Renderer = .image) -> Data? {
+        render(view, size: size, store: store, colorScheme: colorScheme, metrics: metrics, scale: scale, renderer: renderer).png
+    }
+
+    /// `verify` against `store` (see `render(_:size:store:colorScheme:metrics:scale:renderer:)`):
+    /// compares with `<goldenDirectory>/<name>@<variant(of: store, colorScheme:).label>.png`.
+    public static func verify<Content: View>(_ view: Content, named name: String, size: CGSize, store: LumenThemeStore,
+                                             colorScheme: ColorScheme, metrics: LumenMetrics = .standard,
+                                             goldenDirectory: URL, record: Bool = isRecording, tolerance: Double = 0.005,
+                                             renderer: Renderer = .image) -> Outcome {
+        let label = variant(of: store, colorScheme: colorScheme).label
+        let rendered = png(of: view, size: size, store: store, colorScheme: colorScheme, metrics: metrics, renderer: renderer)
+        return outcome(rendered, url: goldenDirectory.appending(path: "\(name)@\(label).png"), record: record, tolerance: tolerance)
     }
 
     public struct Difference: Sendable, CustomStringConvertible {
@@ -334,10 +397,15 @@ public enum LumenSnapshot {
                                              metrics: LumenMetrics = .standard, goldenDirectory: URL,
                                              record: Bool = isRecording, tolerance: Double = 0.005, renderer: Renderer) -> Outcome {
         let url = goldenDirectory.appending(path: "\(name)@\(variant.label).png")
-        guard let rendered = png(of: view, size: size, variant: variant, registry: registry, themes: themes, metrics: metrics,
-                                 renderer: renderer) else {
-            return .renderFailed
-        }
+        let rendered = png(of: view, size: size, variant: variant, registry: registry, themes: themes, metrics: metrics,
+                           renderer: renderer)
+        return outcome(rendered, url: url, record: record, tolerance: tolerance)
+    }
+
+    /// Records `rendered` at `url`, or compares it with the golden there.
+    private static func outcome(_ rendered: Data?, url: URL, record: Bool, tolerance: Double) -> Outcome {
+        guard let rendered else { return .renderFailed }
+        let goldenDirectory = url.deletingLastPathComponent()
         if record {
             do {
                 try FileManager.default.createDirectory(at: goldenDirectory, withIntermediateDirectories: true)

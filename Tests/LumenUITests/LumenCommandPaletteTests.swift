@@ -1,12 +1,26 @@
 import AppKit
 import SwiftUI
 import XCTest
+import LumenConformance
 @testable import LumenUI
 
 @MainActor
 final class LumenCommandPaletteTests: XCTestCase {
     private func command(_ title: String, category: String = "View", keywords: [String] = []) -> LumenCommand {
         LumenCommand(title, category: category, systemImage: "circle", keywords: keywords) {}
+    }
+
+    /// The interactive palette stays under 600 pt at 580 pt wide and fits 580×420 and 580×560: its
+    /// list stops at `listMaximumHeight` and shrinks to what it's offered, scrolling the rest (it
+    /// overflowed 580×420 by 42 pt before, C1 fix round). The M1 exit run's 1085 pt came from the
+    /// snapshot initializer, which lays out every row without a scroll view.
+    func testPaletteMeasuresAsTallAsItDraws() {
+        let commands = (0..<30).map { command("Command \($0)", category: $0 < 15 ? "Go" : "View") }
+        let palette = { LumenCommandPalette(commands, query: "", recentsKey: nil) {} }
+        let ideal = NSHostingController(rootView: palette()).sizeThatFits(in: CGSize(width: 580, height: CGFloat.greatestFiniteMagnitude))
+        XCTAssertLessThan(ideal.height, 600, "ideal height at 580 pt wide")
+        XCTAssertEqual(LumenConformance.overflow(sizes: [CGSize(width: 580, height: 420), CGSize(width: 580, height: 560)]) { palette() }
+            .map(\.description), [])
     }
 
     func testTitlesMatchForgivinglyAndRankWordStartsFirst() {

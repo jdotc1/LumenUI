@@ -110,6 +110,7 @@ struct LumenCappedWidth<Content: View>: View {
 public struct LumenActivityStatus: View {
     private let activity: LumenActivity
     private let width: CGFloat
+    private var flexibleMinimum: CGFloat? = nil
 
     @Environment(\.lumenPalette) private var palette
     @Environment(\.lumenMetrics) private var metrics
@@ -118,6 +119,14 @@ public struct LumenActivityStatus: View {
     public init(_ activity: LumenActivity, width: CGFloat = 300) {
         self.activity = activity
         self.width = width
+    }
+
+    /// A status that can yield toolbar space while preserving its mark and percentage.
+    /// Its label truncates in the middle; the original fixed-width initializer is unchanged.
+    public init(_ activity: LumenActivity, idealWidth: CGFloat, minWidth: CGFloat) {
+        self.activity = activity
+        self.width = max(0, idealWidth)
+        self.flexibleMinimum = min(max(0, minWidth), max(0, idealWidth))
     }
 
     private var tone: LumenToken {
@@ -133,7 +142,14 @@ public struct LumenActivityStatus: View {
         HStack(spacing: metrics.spacing.s3) {
             // A fixed leading slot, so the label starts at one x whichever mark leads it.
             ZStack { statusMark }.frame(width: metrics.iconSize.regular)
-            Text(activity.label).font(metrics.typography.callout).foregroundStyle(palette[tone]).lineLimit(1).lumenNeverTruncates(activity.label)
+            Group {
+                if flexibleMinimum != nil {
+                    Text(activity.label).lineLimit(1).truncationMode(.middle)
+                } else {
+                    Text(activity.label).lineLimit(1).lumenNeverTruncates(activity.label)
+                }
+            }
+            .font(metrics.typography.callout).foregroundStyle(palette[tone])
             Spacer(minLength: 0)
             if case .working(_, let progress?) = activity {
                 Text(progress, format: .percent.precision(.fractionLength(0)))
@@ -144,7 +160,7 @@ public struct LumenActivityStatus: View {
         // While a progress line shows, the text sits 1 pt higher so its descenders clear the line.
         .padding(.bottom, hasProgressLine ? 2 : 0)
         // `width` when there's room; narrower (its label truncating) in a tight bar, never clipped.
-        .frame(minWidth: min(width, Self.minimumWidth), idealWidth: width, maxWidth: width, minHeight: 24, maxHeight: 24)
+        .frame(minWidth: flexibleMinimum ?? min(width, Self.minimumWidth), idealWidth: width, maxWidth: width, minHeight: 24, maxHeight: 24)
         .background(palette[.activityBackground], in: .capsule)
         .overlay(alignment: .bottom) {
             if case .working(_, let progress?) = activity {

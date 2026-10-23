@@ -10,11 +10,16 @@ if [[ -n "${1:-}" ]]; then baseline="$1"
 elif git describe --tags --exact-match HEAD >/dev/null 2>&1; then baseline=$(git describe --tags --abbrev=0 HEAD^)
 else baseline=$(git describe --tags --abbrev=0); fi
 scratch="${LUMEN_SCRATCH:-${TMPDIR:-/tmp}/lumen-api-check}"
+manifest=$(git show "$baseline:Package.swift")
 products=()
 for product in LumenTokens LumenUI LumenConformance; do
   # Only products the baseline already had can break.
-  git show "$baseline:Package.swift" | grep -q "name: \"$product\"" && products+=("$product")
+  grep -q "name: \"$product\"" <<<"$manifest" && products+=("$product")
 done
+if [[ ${#products[@]} -eq 0 ]]; then
+  echo "error: no supported library products found in $baseline:Package.swift" >&2
+  exit 1
+fi
 echo "API check against $baseline: ${products[*]}"
 log=$(mktemp)
 if swift package --scratch-path "$scratch" diagnose-api-breaking-changes "$baseline" --products "${products[@]}" 2>&1 | tee "$log" | grep -E "breaking|API breakage|💔" ; then :; fi

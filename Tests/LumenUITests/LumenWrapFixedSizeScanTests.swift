@@ -18,8 +18,6 @@ final class LumenWrapFixedSizeScanTests: XCTestCase {
 
     /// "<file> · <Text expression or container prefix>" (with " #n" for identical sites).
     static let allowed: Set<String> = [
-        // Results scroll and have a 380 pt height ceiling, independent of the proposed width.
-        "LumenCommandPalette.swift · container:",
         // ViewThatFits measures the first candidate's ideal width; the fallback fixes both axes.
         // Live horizontal scrolling proposes an unspecified width to the lazy row.
         "LumenExtras.swift · container:",

@@ -336,25 +336,54 @@ public struct LumenSettingsSidebarView: View {
 }
 
 /// A ready-made Appearance pane: row density, the system accent switch and the theme gallery,
-/// each applied at once and saved through `store` (density and accent persist only in a store that
-/// persists its selection). Pair it with `.lumenDensityRoot(store:)` on the app's windows.
+/// each applied at once and saved through the store (density and accent persist only in a store
+/// that persists its selection). Pair it with `.lumenDensityRoot(store:)` on the app's windows.
 public struct LumenAppearanceSettings: View {
-    private let store: LumenThemeStore
+    /// The store passed to `init(store:showsGallery:)`; `nil` uses the window's (`\.lumenStore`).
+    private let explicitStore: LumenThemeStore?
     private let showsGallery: Bool
+    @Environment(\.lumenStore) private var environmentStore
+
+    /// Settings for the store of the window they appear in: the one `.lumenPaletteRoot(store:)`
+    /// injected.
+    /// - Parameter showsGallery: `false` for apps that show the gallery in a pane of its own.
+    public init(showsGallery: Bool = true) {
+        explicitStore = nil
+        self.showsGallery = showsGallery
+    }
+
+    /// Settings for `store`. Without a store argument, `init(showsGallery:)` (the window's store)
+    /// is chosen.
+    /// - Parameter showsGallery: `false` for apps that show the gallery in a pane of its own.
+    public init(store: LumenThemeStore = .active, showsGallery: Bool = true) {
+        explicitStore = store
+        self.showsGallery = showsGallery
+    }
+
+    public var body: some View {
+        let store = explicitStore ?? environmentStore
+        // Keyed by the store, so the density storage follows a store swapped in the environment.
+        LumenAppearanceSettingsForm(store: store, showsGallery: showsGallery)
+            .id(ObjectIdentifier(store))
+    }
+}
+
+private struct LumenAppearanceSettingsForm: View {
+    let store: LumenThemeStore
+    let showsGallery: Bool
     @AppStorage private var densityRaw: String
 
     @Environment(\.lumenPalette) private var palette
     @Environment(\.lumenMetrics) private var metrics
 
-    /// - Parameter showsGallery: `false` for apps that show the gallery in a pane of its own.
-    public init(store: LumenThemeStore = .active, showsGallery: Bool = true) {
+    init(store: LumenThemeStore, showsGallery: Bool) {
         self.store = store
         self.showsGallery = showsGallery
         _densityRaw = AppStorage(wrappedValue: LumenDensity.regular.rawValue, store.configuration.densityDefaultsKey,
                                  store: store.configuration.defaults)
     }
 
-    public var body: some View {
+    var body: some View {
         Form {
             Section {
                 // Lumen's own controls in Lumen's own settings: the pill switcher and the themed checkbox.

@@ -5,7 +5,7 @@ import SwiftUI
 /// Every registered token, resolved once for the current selection of each surface's theme and
 /// the accent mode.
 ///
-/// `Lumen.color(_:)` is fine for chrome, but each call takes the store's lock and records an
+/// `store.color(_:)` is fine for chrome, but each call takes the store's lock and records an
 /// Observation dependency. Dense views (table rows, cells, graph nodes) should read colors from
 /// this value instead: inject it once near the root with `.lumenPaletteRoot()` and read
 /// `@Environment(\.lumenPalette)` in rows. A lookup is a dictionary read. The colors stay
@@ -145,13 +145,28 @@ extension View {
     ///
     /// - Parameter windowChrome: `false` keeps the system's plain title bar (a window that draws its
     ///   own top bar with `LumenTopBar` already carries the glow).
+    ///
+    /// - Parameter store: the store this window draws with. A second store (another document
+    ///   window's themes, a preview of one theme) gets its own root: every Lumen view below reads
+    ///   colors, metrics and the chrome style from it, not from the shared store.
     public func lumenPaletteRoot(store: LumenThemeStore = .active, windowChrome: Bool) -> some View {
-        modifier(LumenPaletteRootModifier(store: store, windowChrome: windowChrome))
+        modifier(LumenPaletteRootModifier(explicitStore: store, windowChrome: windowChrome))
     }
 
     /// `lumenPaletteRoot(store:windowChrome:)` with the title bar glow.
     public func lumenPaletteRoot(store: LumenThemeStore = .active) -> some View {
-        modifier(LumenPaletteRootModifier(store: store, windowChrome: true))
+        modifier(LumenPaletteRootModifier(explicitStore: store, windowChrome: true))
+    }
+
+    /// `lumenPaletteRoot(store:windowChrome:)` for the store already in the environment
+    /// (`\.lumenStore`, set by an enclosing root), or the active store outside any root.
+    public func lumenPaletteRoot(windowChrome: Bool) -> some View {
+        modifier(LumenPaletteRootModifier(explicitStore: nil, windowChrome: windowChrome))
+    }
+
+    /// `lumenPaletteRoot(windowChrome:)` with the title bar glow.
+    public func lumenPaletteRoot() -> some View {
+        modifier(LumenPaletteRootModifier(explicitStore: nil, windowChrome: true))
     }
 
     /// Marks a subtree drawn on a raised ground (a card, popover, sheet or menu): its wells take
@@ -180,11 +195,13 @@ extension View {
 }
 
 private struct LumenPaletteRootModifier: ViewModifier {
-    let store: LumenThemeStore
+    let explicitStore: LumenThemeStore?
     let windowChrome: Bool
     @Environment(\.colorScheme) private var inheritedColorScheme
+    @Environment(\.lumenStore) private var inheritedStore
 
     func body(content: Content) -> some View {
+        let store = explicitStore ?? inheritedStore
         let palette = store.resolvedPalette()
         // Native controls stay native but take the theme's accent: list selection, checkboxes,
         // segmented controls, buttons, progress.

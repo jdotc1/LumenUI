@@ -18,12 +18,23 @@ public struct LumenStoreConfiguration: Sendable, Hashable {
     /// A user-defaults suite for the saved choices; `nil` is the app's standard defaults. Tests
     /// that exercise persistence use a unique suite and remove it afterwards.
     public var defaultsSuiteName: String?
+    /// How the navigation layer's chrome draws (PRINCIPLES §11). `.drawn`, the default, is
+    /// Lumen's own chrome; `.glass` uses system glass there on macOS 26 and later.
+    public var chromeStyle: LumenChromeStyle = .drawn
 
     public init(appName: String, themesDirectory: URL? = nil, defaultThemeID: String? = nil, defaultsSuiteName: String? = nil) {
         self.appName = appName
         self.themesDirectory = themesDirectory
         self.defaultThemeID = defaultThemeID
         self.defaultsSuiteName = defaultsSuiteName
+    }
+
+    /// The same, with a chrome style (PRINCIPLES §11).
+    public init(appName: String, themesDirectory: URL? = nil, defaultThemeID: String? = nil, defaultsSuiteName: String? = nil,
+                chromeStyle: LumenChromeStyle) {
+        self.init(appName: appName, themesDirectory: themesDirectory, defaultThemeID: defaultThemeID,
+                  defaultsSuiteName: defaultsSuiteName)
+        self.chromeStyle = chromeStyle
     }
 
     public var defaultsKeyPrefix: String { "\(appName).lumen" }
@@ -180,6 +191,27 @@ public final class LumenThemeStore: Sendable {
         self.systemAccentTokens = Set(registry.systemAccentTokens)
         self.raisedTokens = registry.raisedTokens
         self.state = LumenLock(initial)
+    }
+
+    /// A store of its own, beside the app's shared one: a document window with its own theme, a
+    /// preview of one theme, a helper that renders several themes at once. Give it to a window with
+    /// `.lumenPaletteRoot(store:)`; every Lumen view below reads it from the environment, and the
+    /// shared store (and `install(_:)`) is untouched.
+    ///
+    /// Unlike `init(registry:configuration:themes:persistsSelection:)`, it doesn't persist its
+    /// selection unless asked: a second store that persists should have its own `appName` or
+    /// `defaultsSuiteName`, or it shares (and overwrites) the shared store's saved choices. It
+    /// follows system accent changes only when its owner calls `systemColorsDidChange()`
+    /// (`install(_:)` does that for the shared store).
+    ///
+    /// ```swift
+    /// let preview = LumenThemeStore(configuration: .init(appName: "MyApp"), registry: AppTheme.registry)
+    /// preview.select(LumenThemes.ultravioletID)
+    /// PreviewWindow().lumenPaletteRoot(store: preview)
+    /// ```
+    public convenience init(configuration: LumenStoreConfiguration, registry: LumenRegistry,
+                            themes: [LumenTheme]? = nil, persistsSelection: Bool = false) {
+        self.init(registry: registry, configuration: configuration, themes: themes, persistsSelection: persistsSelection)
     }
 
     // MARK: Observed reads
@@ -500,16 +532,18 @@ extension LumenThemeStore {
         installed.withLock { $0 } ?? fallback
     }
 
-    /// Makes `store` the app's shared store. Call it once at launch, before any view reads a
-    /// color (for example in the `App` initializer):
+    /// Makes `store` the app's shared store: the convenience for an app with one store. Call it
+    /// once at launch, before any view reads a color (for example in the `App` initializer):
     ///
     /// ```swift
     /// LumenThemeStore.install(LumenThemeStore(registry: AppTheme.registry,
     ///                                         configuration: .init(appName: "MyApp")))
     /// ```
     ///
-    /// `Lumen.color(_:)`, `.lumen(_:)` and the default palette read it from then on. With
-    /// `watchesThemesFolder`, edits in the themes folder reload on their own.
+    /// `.lumenPaletteRoot()`, `.lumen(_:)` and the environment's default palette read it from then
+    /// on. With `watchesThemesFolder`, edits in the themes folder reload on their own. An app with
+    /// more than one store installs (at most) the main one and gives each other window its own
+    /// with `init(configuration:registry:)` and `.lumenPaletteRoot(store:)`.
     public static func install(_ store: LumenThemeStore, watchesThemesFolder: Bool = true) {
         installed.withLock { $0 = store }
         if watchesThemesFolder { store.watchThemesDirectory() }
@@ -540,10 +574,13 @@ extension LumenThemeStore {
 /// The Lumen namespace: colors from the active store, and the fixed scales (see `LumenMetrics`
 /// for the per-app ones components use).
 public enum Lumen {
-    /// A themed SwiftUI color from the active store. Fine for chrome; dense views should read
-    /// `@Environment(\.lumenPalette)` instead.
+    /// A themed SwiftUI color from the active store. It ignores the window's store, so it draws the
+    /// shared store's colors in a second store's window; it keeps working until 1.0.
+    @available(*, deprecated, message: "Read the window's store: `@Environment(\\.lumenPalette) var palette` and `palette[token]` in views, or `store.color(_:)`; removed in 1.0")
     public static func color(_ token: LumenToken) -> Color { LumenThemeStore.active.color(token) }
-    /// A themed, dynamic AppKit color from the active store.
+    /// A themed, dynamic AppKit color from the active store. Like `color(_:)`, it ignores the
+    /// window's store; it keeps working until 1.0.
+    @available(*, deprecated, message: "Read the window's store: `store.nsColor(_:)` on `@Environment(\\.lumenStore)`, or the store the AppKit view was given; removed in 1.0")
     public static func nsColor(_ token: LumenToken) -> NSColor { LumenThemeStore.active.nsColor(token) }
     /// The theme a surface draws with in the active store.
     public static func theme(for surface: LumenSurface = .window) -> LumenTheme { LumenThemeStore.active.theme(for: surface) }
@@ -551,5 +588,7 @@ public enum Lumen {
 
 public extension ShapeStyle where Self == Color {
     /// A themed color: `.foregroundStyle(.lumen(.fgSecondary))`, `.background(.lumen(.bgCanvas))`.
-    static func lumen(_ token: LumenToken) -> Color { Lumen.color(token) }
+    /// It reads the active store when called, not the window's: in an app with a second store,
+    /// views in that store's window should read `@Environment(\.lumenPalette)` instead.
+    static func lumen(_ token: LumenToken) -> Color { LumenThemeStore.active.color(token) }
 }

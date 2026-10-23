@@ -1,10 +1,8 @@
 name: CI
 
-# GitHub-hosted runners only: consumer apps's self-hosted runner is never used for Lumen.
-on:
-  push:
-    branches: [main]
-  pull_request:
+# Runs once GitHub ships the macos-27 image; until then the gate is
+# Scripts/release.sh on the maintainer's macOS 27 Mac.
+on: workflow_dispatch
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -12,7 +10,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: macos-26
+    runs-on: macos-27
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

@@ -12,14 +12,16 @@ Repository: https://github.com/jdotc1/LumenUI
   gallery, editor and library.
 - **`LumenConformance`:** checks an app runs in its own tests at each Lumen pin bump: themes,
   layout, shortcuts, color coverage, the workspace window, truncation, icon scale, overflow,
-  surface steps, tile backlight, visible duplicates and narrow sizing. Test targets only.
+  surface steps, tile backlight, visible duplicates and narrow sizing. Apps add their own
+  `LumenCheck` rules and run them with the same context and finding format. For app test targets;
+  the Catalog also lists check metadata.
 - **`lumen-theme`:** a command-line tool that validates theme files and exports the reference.
 - **Lumen Catalog** (`swift run LumenCatalog`): every component in a real Mac app, including native
   menus with Lumen tiles, the command menu, a Settings window with colored tabs, a welcome window,
   a live toolbar, an inspector, popovers, Lumen's glyphs, live pages for forms and controls, search
   and navigation, data and Git, and browsing, and a workspace window. Launch options
   for screenshots and demos: `LUMEN_CATALOG_PAGE=<page>`, `THEME=<theme id>`, `APPEARANCE=light|dark`,
-  `WORKSPACE=1`, `SPLIT=1` (a split workspace window), `WELCOME=1`, `SETTINGS=1`, `PALETTE=1|<query>`, `COMMANDS=1`, `POPOVER=1`,
+  `CHROME=glass|drawn` (the chrome style, Docs/GLASS.md), `WORKSPACE=1`, `SPLIT=1` (a split workspace window), `WELCOME=1`, `SETTINGS=1`, `PALETTE=1|<query>`, `COMMANDS=1`, `POPOVER=1`,
   `LAUNCH=<seconds>`, `DOCK=1`, `PANEL=<tab>`, `INSPECTOR=0`, `ACTIVITY=working`, `SCROLL=bottom` and
   `LOGSTREAM=1` (a log line every 0.3 s), each prefixed `LUMEN_CATALOG_`.
 
@@ -251,6 +253,30 @@ Window("Welcome to Field Notes", id: "welcome") {
 }
 ```
 
+For a split view, share its visibility binding with the sidebar modifier:
+
+```swift
+@State private var columns: NavigationSplitViewVisibility = .all
+
+NavigationSplitView(columnVisibility: $columns) {
+    sidebar.lumenSidebarToggle(columnVisibility: $columns)
+} detail: {
+    detail
+}
+```
+
+The resolved chrome style chooses a bare outline button matching the inspector in `.drawn` and the system
+sidebar toggle in `.glass`, including runtime changes. Native sidebar menu commands still work.
+Apply `.lumenToolbarPlatter(chromeStyle)` to your other toolbar items. A `ToolbarItem` containing
+`LumenToolbarIdentity` directly automatically stays bare in both styles; keep identities in their
+own item, separate from control groups. For a status that yields
+space before controls overflow, use `LumenToolbarStatus(activity, minWidth: 180)`
+after the identity with `.navigation` placement. It measures the full label and percentage, then
+limits the capsule to the room left by the live native toolbar items, including AppKit's spacing.
+Only a shortage of room causes middle truncation; at the minimum, native overflow applies.
+The older `idealWidth:minWidth:` initializer forwards to this behavior and is deprecated.
+Existing `width:` initializers retain their behavior.
+
 An inspector and popovers. Both stay native (`.inspector`, `.popover`); Lumen lays out what's inside:
 
 ```swift
@@ -330,7 +356,27 @@ surfaces, not against the popover material, which the system draws; the tile car
 follows the app's `AccentColor` asset, so set that asset to your accent too.
 
 Dense views read the resolved palette once (`@Environment(\.lumenPalette)`) instead of calling
-`Lumen.color` per cell. Sizes, fonts and corners come from `@Environment(\.lumenMetrics)`.
+`store.color(_:)` per cell. Sizes, fonts and corners come from `@Environment(\.lumenMetrics)`.
+(`Lumen.color` and `Lumen.nsColor` are deprecated and go away in 1.0: they read the shared store
+whatever window they're in.)
+
+### More than one store
+
+`install(_:)` is the convenience for an app with one store. A window that draws with its own
+themes (a document with a per-window theme, a preview of one theme) gets a store of its own and
+its own root; every Lumen view below it, the gallery and Appearance settings included, reads that
+store from the environment, and the shared store is untouched:
+
+```swift
+let preview = LumenThemeStore(configuration: .init(appName: "MyApp"), registry: registry)  // persists nothing
+preview.select(LumenThemes.ultravioletID)
+PreviewWindow().lumenPaletteRoot(store: preview)
+```
+
+`LumenSnapshot.verify(_:named:size:store:colorScheme:goldenDirectory:)` renders against such a
+store without making it active, so a view that still reads the shared store shows up in its golden.
+`.lumen(_:)` reads the active store; inside a second store's window read
+`@Environment(\.lumenPalette)` instead.
 
 ### Validate themes in your tests
 
@@ -369,3 +415,28 @@ MIT license and are for use in apps on Apple platforms only.
 Apple's terms do not allow app icons built from SF Symbols. Use the symbol-based artwork
 provided by `LumenDockIcon` for in-app tiles only, not as an app or Dock icon. The Catalog uses
 its packaged procedural `Design/LumenCatalog.icon` artwork.
+
+## App conformance checks
+
+A3 ships the `LumenCheck` protocol, runner, twelve refit checks, and `forbiddenSourcePatterns`.
+Keep conformance in your app's test target. Existing static checks continue to work; custom
+`LumenCheck` types provide an `id`, `title`, optional `owner` (default `"Lumen"`), and
+`@MainActor func run(in context: LumenCheckContext) -> [LumenConformance.Finding]`.
+
+```swift
+@MainActor
+func checkAppSources(_ files: [URL]) -> [LumenConformance.Finding] {
+    LumenConformance.run([
+        LumenConformance.forbiddenSourcePatterns(
+            [".foregroundStyle(.primary)", ".foregroundStyle(.secondary)"], in: files)
+    ], in: [LumenCheckContext()])
+}
+```
+
+For a view, pass a named `AnyView` subject, sizes, registry, themes and snapshot variants in the
+context. A minimum-text-size check and a label check are deferred until the renderer exposes resolved text sizes and the SwiftUI accessibility tree.
+
+The source helper matches literal text, including comments and strings, and reports unreadable
+files. Workbench's staged `WorkbenchStyleRatchet` shows how an app can allow a fixed occurrence
+budget and fail above it. The Catalog's Conformance page groups app checks by `owner` without
+running them. The runner preserves context/check ordering and the existing finding format.

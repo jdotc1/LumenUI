@@ -20,7 +20,13 @@ xcrun actool Design/LumenCatalog.icon --compile "$WORK" --platform macosx --mini
 
 BUNDLE="$WORK/Lumen Catalog.app"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
-cp "$SCRATCH/release/LumenCatalog" "$BUNDLE/Contents/MacOS/LumenCatalog"
+# AppKit chooses the macOS 26 design (toolbar platters, glass) by the SDK a binary says it was
+# linked against. Under Xcode 27.2's Swift 6.4.2, the driver hands ld `-platform_version macos 14.0
+# 14.0` for this link, so the Catalog was stamped sdk 14.0 and drew the pre-26 design. Restamp the
+# SDK from `xcrun --show-sdk-version` (minimum stays 14.0) instead of unsafeFlags in Package.swift,
+# which would stop apps from depending on the package. See Docs/GLASS.md › Receipts.
+xcrun vtool -set-build-version macos 14.0 "$(xcrun --show-sdk-version)" -replace \
+  -output "$BUNDLE/Contents/MacOS/LumenCatalog" "$SCRATCH/release/LumenCatalog"
 cp "$WORK/Assets.car" "$WORK/LumenCatalog.icns" "$BUNDLE/Contents/Resources/"
 # LumenUI's resource bundle (its custom SF Symbols); Bundle.module looks for it in Resources.
 for resources in "$SCRATCH"/release/*.bundle; do

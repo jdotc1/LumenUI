@@ -178,6 +178,31 @@ Tile sections keep Title Case titles. Tags and badges are sentence case.
 `status.danger`: error states, console and debugger markers, status chips, banners), warning a
 triangle (`exclamationmark.triangle.fill`, in `status.warning`).
 
+## 11. Glass
+
+macOS 26 and 27 draw the system's chrome in Liquid Glass. Lumen treats glass as both a look and a
+behavior (§1): Reduce Transparency, Increase Contrast and the transparency slider govern it. The
+policy is [GLASS.md](GLASS.md); this is its summary.
+
+- **Two layers.** The navigation layer (the window toolbar's background, the unified top bar's
+  band, the sidebar edge, floating palettes such as ⌘K and the input palette, popovers) may use
+  system glass. The content layer (lists, tables, cards, editors, inspectors, sheets, settings
+  panes, status bars, menus) never does.
+- **No glass on glass.** One glass surface along any line of sight: a palette over a glass toolbar
+  is one glass sheet with opaque rows; a popover over it is the system's popover and Lumen adds
+  none.
+- **Tint only primary actions.** Glass carries the palette's foreground; `.tint(palette.accent)`
+  goes on the one primary action, as in `.drawn`.
+- **Contrast is measured against the opaque fallback.** Every foreground on a glass surface meets
+  its rule against the token the drawn chrome paints there (`toolbar.background`,
+  `menu.background`, `sidebar.background`). The blur may add legibility, never supply it, so
+  Reduce Transparency and the slider can only make a surface more readable.
+- **The drawn chrome is the reference.** `LumenChromeStyle.drawn` is the default through 0.x
+  (roadmap D1): goldens, the validator and the Catalog's pages are recorded in it. `.glass` is
+  opt-in per store (`LumenStoreConfiguration.chromeStyle`) or per subtree
+  (`.lumenChromeStyle(.glass)`), draws as `.drawn` below macOS 26, under Reduce Transparency and
+  in offscreen renders, and changes no token, metric, keyboard behavior, focus or selection.
+
 ## Checklist for a new component
 
 1. Which Mac behavior does it touch? Match it (keyboard, focus, menus, appearance).
@@ -188,6 +213,8 @@ triangle (`exclamationmark.triangle.fill`, in `status.warning`).
 5. Add a golden image (or a Catalog page, for native controls that can't render offscreen).
 6. What's the narrowest it can be? Make it adapt down to that width, and test it with
    `LumenLayout.minimumWidth(of:)`.
+7. Does it draw a ground? Then it is content and never glass, unless [GLASS.md](GLASS.md) lists
+   it in the navigation layer; only there does it read `\.lumenResolvedChromeStyle` (§11).
 
 ### Hero and welcome actions
 
