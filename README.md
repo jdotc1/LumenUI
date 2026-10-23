@@ -6,7 +6,7 @@ Lumen serves several apps, each with its own identity.
 
 Repository: https://github.com/jdotc1/LumenUI
 
-- **macOS 14+**, Swift 6, SwiftUI first with AppKit where it matters.
+- **macOS 27+**, Swift 6, SwiftUI first with AppKit where it matters.
 - **`LumenTokens`:** tokens, packs, registry, themes, validator, export. Plain Swift, no UI.
 - **`LumenUI`:** theme store, palette environment, metrics, density, components, and the theme
   gallery, editor and library.
@@ -207,7 +207,7 @@ import LumenUI
                 .lumenMetrics(.standard)          // or your app's metrics: fonts, spacing, corners
                 .lumenDensityRoot()
         }
-        Settings { LumenThemeGallery() }          // theme picker, per-surface pickers, editor, import/export
+        Settings { LumenSettingsSidebarView(settingsCategories) }.lumenSettingsScene()
     }
 }
 ```
@@ -230,6 +230,29 @@ LumenCommandMenu(entries)                                                // quic
 GeneralPane().lumenSettingsTab("General", systemImage: "gearshape.fill", hue: .hueGraphite)  // Settings tab
 LumenSettingsPane("General", systemImage: "gearshape.fill", hue: .hueGraphite, summary: "…") { /* native Form rows */ }
 ```
+
+### Settings: adopt the complete window
+
+```swift
+Settings { LumenSettingsSidebarView(categories) }.lumenSettingsScene()
+```
+
+Supply `[LumenSettingsCategory]`, each with its pane content. The stock scaffold owns the searchable
+source-list sidebar and palette surfaces, category tiles, Back/Forward history (⌘[ / ⌘]), matching
+icon-only sidebar toggle, category navigation title, balanced split and stable window frame. The
+Scene helper sets native compact toolbar behavior and window defaults; the scaffold applies its
+own palette tint.
+Both `.drawn` and `.glass` use the same complete window, including apps with only two categories.
+`LumenSettingsPane` keeps its tile, title and summary and bounds both `.rich` and `.grouped` content.
+
+Don't rebuild the window from parts or wrap it in another split view. Never add a labeled
+“Sidebar” toolbar button, a principal “Settings” title, a hidden-titlebar recipe or extra toolbar
+padding. The category title belongs beside Back/Forward in the chrome; its pane header remains
+in the content. Use the scaffold's selection API for deep links and
+`.lumenSettingsQuery(_:)` when embedding settings rows in another search context. The Catalog's
+real Settings window (⌘,) demonstrates this recipe, including the sparse two-category case and
+an Engine sample built from public rows; the tabbed sample remains on its Catalog page.
+See `Docs/PRINCIPLES.md` §12 for whole-window ownership and settings adoption guidance.
 
 A welcome window and a toolbar with live task state:
 

@@ -180,7 +180,7 @@ triangle (`exclamationmark.triangle.fill`, in `status.warning`).
 
 ## 11. Glass
 
-macOS 26 and 27 draw the system's chrome in Liquid Glass. Lumen treats glass as both a look and a
+macOS 27 draws the system's chrome in Liquid Glass. Lumen treats glass as both a look and a
 behavior (§1): Reduce Transparency, Increase Contrast and the transparency slider govern it. The
 policy is [GLASS.md](GLASS.md); this is its summary.
 
@@ -200,8 +200,54 @@ policy is [GLASS.md](GLASS.md); this is its summary.
 - **The drawn chrome is the reference.** `LumenChromeStyle.drawn` is the default through 0.x
   (roadmap D1): goldens, the validator and the Catalog's pages are recorded in it. `.glass` is
   opt-in per store (`LumenStoreConfiguration.chromeStyle`) or per subtree
-  (`.lumenChromeStyle(.glass)`), draws as `.drawn` below macOS 26, under Reduce Transparency and
+  (`.lumenChromeStyle(.glass)`), draws as `.drawn` under Reduce Transparency and
   in offscreen renders, and changes no token, metric, keyboard behavior, focus or selection.
+
+## 12. A window component ships as a whole window
+
+A settings window, workspace or other component intended to be a window's root owns its chrome:
+toolbar style and items, sidebar list style, palette surfaces, title placement and frame. If a
+native behavior can only be configured on the Scene, Lumen supplies a companion Scene helper and
+the adoption recipe includes it. An app supplies its content and state; it must not need to rebuild
+the root from tiles, rows and headers to obtain the intended window.
+
+**Acceptance requires a screenshot of a real Catalog window.** A scaled preview tile cannot prove
+native toolbar height, sidebar toggle size, window title placement, window sizing or scene tint.
+The real window must exercise sparse and populated content in both `.drawn` and `.glass` chrome.
+Live-window assertions and window goldens preserve that contract; component previews supplement it.
+
+**Settings has one chrome title rule.** The selected category is the native navigation title beside
+the Back/Forward group. Never add another category title as a toolbar item or leave it floating
+alone in an empty band. The pane retains its own tile, title and summary: that header introduces
+the content, while the navigation title identifies the current destination. Back/Forward and the
+sidebar toggle have matching control sizes. There is exactly one icon-only sidebar-toggle item
+in the actual native toolbar, no labeled “Sidebar” item and no principal “Settings” text. Measure
+the combined titlebar/toolbar height against the system's unified-style reference; a compact-style
+modifier alone is not proof of compact geometry.
+
+### Settings adoption lessons
+
+A client adopted the stock `LumenSettingsSidebarView` and got a small, bare sidebar glyph in an oversized,
+mostly empty toolbar band, a detached category title, a flat gray sidebar against a near-black
+detail pane, and an oversized sparse window. These were Lumen design-system errors. Lumen extracted
+Workbench's tiles, header and rows but omitted its complete window composition: explicit sidebar
+list style and surfaces, search prompt, selection history, balanced split, stable frame and scene
+chrome/tint. The Catalog hid that omission by showing the wrapper only in a scaled preview while
+its real Settings window used a `TabView`. An internal search-query environment also blocked hosts
+from integrating the public parts without copying behavior.
+
+The correction belongs in the stock scaffold and its Scene helper, demonstrated in the Catalog's
+real Settings window. A host-specific wrapper is not the remedy. The rejection screenshot proves
+the visual failure; it does not by itself establish the native mechanism that chose the old toggle
+size or titlebar height.
+
+The second and third settings revisions show why composing the parts again does not repair the
+contract: an outer split-view removal modifier and a compact Scene style still left both the
+system toggle and a labeled custom “Sidebar” button, with a separate principal “Settings” title.
+A purple band, flat gray sidebar and slab-like selection did not form coherent surfaces with
+the dark detail pane. Toolbar ownership and removal scope must be established from a real
+window's items and geometry, not assumed from source modifiers. Two sparse categories must use
+a proportionate stable content height, and trailing row controls stay within a bounded measure.
 
 ## Checklist for a new component
 
@@ -210,7 +256,8 @@ policy is [GLASS.md](GLASS.md); this is its summary.
    (`LumenMetrics`), so every app and theme can restyle it, and in the role's look (§10).
 3. Which colors carry text or meaning? Give each one a contrast or distinctness rule.
 4. Does it read in light, dark, Increase Contrast and Reduce Motion?
-5. Add a golden image (or a Catalog page, for native controls that can't render offscreen).
+5. Add a golden image (or a Catalog page, for native controls that can't render offscreen). A window
+   root also requires real Catalog window captures and live-window checks (§12).
 6. What's the narrowest it can be? Make it adapt down to that width, and test it with
    `LumenLayout.minimumWidth(of:)`.
 7. Does it draw a ground? Then it is content and never glass, unless [GLASS.md](GLASS.md) lists

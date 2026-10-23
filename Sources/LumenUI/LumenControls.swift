@@ -473,7 +473,7 @@ public struct LumenTable<Row: Identifiable>: View {
     @Environment(\.lumenMetrics) private var metrics
     @Environment(\.lumenRendersOffscreen) private var rendersOffscreen
     @Environment(\.lumenDensity) private var density
-    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.lumenReportsLayoutChecks) private var reportsChecks
     /// Cells' truncation reports, carried out of the scrolling rows (a lazy stack in a scroll view
     /// doesn't pass preferences up) so the conformance checks see them.
@@ -720,7 +720,7 @@ public struct LumenTable<Row: Identifiable>: View {
         .frame(minHeight: density.rowHeight(in: metrics.layout))
         // The navigation family's quiet selection, from the one row rule: it goes quieter when the
         // window loses key, as every content list does (§10).
-        .lumenRowBackground(LumenRowState.resolve(isSelected: selected, isActiveWindow: activeState != .inactive))
+        .lumenRowBackground(LumenRowState.resolve(isSelected: selected, isActiveWindow: appearsActive))
         .contentShape(.rect)
         .onTapGesture { selection = row.id }
         .padding(.horizontal, metrics.spacing.s2)

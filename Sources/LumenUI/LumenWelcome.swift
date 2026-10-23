@@ -19,6 +19,7 @@ public struct LumenStarfield: View {
     public var accents: [LumenToken]
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.lumenRendersOffscreen) private var rendersOffscreen
     @Environment(\.lumenPalette) private var palette
     @Environment(\.colorScheme) private var colorScheme
     @State private var state = LumenStarfieldState()
@@ -38,7 +39,7 @@ public struct LumenStarfield: View {
             ? [palette[.fgTertiary], palette[.fgTertiary], palette[.fgSecondary]]
             : [palette[.accent].opacity(0.35), palette[.accent].opacity(0.35), palette[.accent].opacity(0.55)]
         let colors = quiet + accents.map { palette[$0] }
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion || rendersOffscreen)) { timeline in
             Canvas { context, size in
                 state.advance(to: timeline.date.timeIntervalSinceReferenceDate, surging: isSurging && !reduceMotion)
                 state.draw(in: &context, size: size, pointer: pointer, seed: seed, starCount: starCount,
@@ -215,6 +216,7 @@ public struct LumenWelcomeView: View {
             recentsPanel.frame(width: 300).frame(maxHeight: .infinity)
         }
         .frame(minWidth: 700, minHeight: 440)
+        .lumenWindowCornerClip()
     }
 
     private var hero: some View {
@@ -332,7 +334,8 @@ public struct LumenWelcomeView: View {
                 }
             }
         }
-        .background(palette[.welcomePanel])
+        // Keep the interior column seam square; only the outer window clip is concentric.
+        .background(palette[.welcomePanel], in: Rectangle())
         // Full height like the panel's ground (a background runs under the hidden title bar; an
         // overlay doesn't unless told), so the divider doesn't start below the title bar.
         .overlay(alignment: .leading) {
@@ -485,6 +488,7 @@ public struct LumenWelcomePanel: View {
             ScrollView { column }
         }
         .background(palette[.bgCanvas])
+        .lumenWindowCornerClip()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Welcome to \(appName)")
     }

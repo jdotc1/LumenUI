@@ -24,11 +24,11 @@ struct LumenCatalogApp: App {
             registry: LumenRegistry(packs: [.core, .code]),
             // Saved in a suite of its own, so the Appearance settings demo (density, accent) works.
             configuration: LumenStoreConfiguration(
-                appName: isPreview ? "LumenCatalogSemanticPreview" : "LumenCatalog",
+                appName: isPreview ? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "LumenCatalogPreview") : "LumenCatalog",
                 themesDirectory: isPreview
                     ? URL(fileURLWithPath: previewData ?? NSHomeDirectory() + "/Library/Application Support/LumenPreview/Data").appending(path: "Themes")
                     : FileManager.default.temporaryDirectory.appending(path: "LumenCatalogThemes"),
-                defaultsSuiteName: isPreview ? "com.jdotc1.lumen.catalog.semantic-preview" : "com.lumen.catalog.demo")
+                defaultsSuiteName: isPreview ? (Bundle.main.bundleIdentifier ?? "com.jdotc1.lumen.catalog.semantic-preview") : "com.lumen.catalog.demo")
         )
         LumenThemeStore.install(store, watchesThemesFolder: false)
         // `LUMEN_CATALOG_CHROME=glass|drawn` sets the chrome style for this launch (for screenshots):
@@ -47,7 +47,7 @@ struct LumenCatalogApp: App {
 
     var body: some Scene {
         WindowGroup(Bundle.main.object(forInfoDictionaryKey: "LumenCatalogPreview") as? Bool == true
-                    ? "Lumen Semantic Text Preview" : "Lumen Catalog", id: "catalog") {
+                    ? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Lumen Catalog Preview") : "Lumen Catalog", id: "catalog") {
             CatalogView()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
@@ -110,12 +110,13 @@ struct LumenCatalogApp: App {
         .defaultPosition(.center)
 
         Settings {
-            CatalogSettings()
+            LumenSettingsSidebarView(CatalogSettings.windowCategories, initialSelection: CatalogSettings.initialSelection)
+                .background(CatalogSettingsWindowReceipt())
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
                 .modifier(CatalogChromeRoot())
-                .frame(width: 620, height: 460)
         }
+        .lumenSettingsScene()
     }
 }
 
@@ -124,7 +125,11 @@ struct LumenCatalogApp: App {
 /// The Catalog's chrome style (PRINCIPLES §11), saved in the demo suite so every window shares it.
 enum CatalogChrome {
     static let key = "catalog.chromeStyle"
-    static var defaults: UserDefaults { UserDefaults(suiteName: "com.lumen.catalog.demo") ?? .standard }
+    static var defaults: UserDefaults {
+        let isPreview = Bundle.main.object(forInfoDictionaryKey: "LumenCatalogPreview") as? Bool == true
+        let suite = isPreview ? Bundle.main.bundleIdentifier : "com.lumen.catalog.demo"
+        return suite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
+    }
 }
 
 /// `LUMEN_CATALOG_CHROME`'s style for this launch, ahead of the saved one and never written to
@@ -142,8 +147,7 @@ struct CatalogChromeRoot: ViewModifier {
     func body(content: Content) -> some View { content.lumenChromeStyle(launch.style ?? LumenChromeStyle.resolve(raw)) }
 }
 
-/// The toolbar's Glass toggle: switches every open window between `.drawn` and `.glass`. Disabled
-/// below macOS 26, where `.glass` draws as `.drawn`.
+/// The toolbar's Glass toggle: switches every open window between `.drawn` and `.glass`.
 struct CatalogChromeToggle: View {
     @AppStorage(CatalogChrome.key, store: CatalogChrome.defaults) private var raw = LumenChromeStyle.drawn.rawValue
     @Environment(\.lumenPalette) private var palette
@@ -163,9 +167,7 @@ struct CatalogChromeToggle: View {
         .foregroundStyle(isGlass ? palette[.layoutToggleOn] : palette[.fgSecondary])
         .lumenIconOnlyControl(title)
         .lumenFocusRing()
-        .disabled(!LumenChromeStyle.systemSupportsGlass)
-        .help(!LumenChromeStyle.systemSupportsGlass ? "Glass chrome needs macOS 26 or later"
-              : isGlass && resolved == .drawn ? "Glass chrome (drawn while Reduce Transparency is on)" : title)
+        .help(isGlass && resolved == .drawn ? "Glass chrome (drawn while Reduce Transparency is on)" : title)
     }
 }
 
@@ -268,26 +270,15 @@ enum CatalogPage: String, CaseIterable, Identifiable {
 }
 
 struct CatalogView: View {
-    private let forceLegacyColumns: Bool
     /// The window's store, for the palette's theme commands.
     @Environment(\.lumenStore) var lumenStore
     @Environment(\.lumenResolvedChromeStyle) private var chromeStyle
-
-    init(useLegacyColumns: Bool = false) {
-        forceLegacyColumns = useLegacyColumns
-    }
-
-    private var usesLegacyColumns: Bool {
-        if #available(macOS 27, *) { return forceLegacyColumns }
-        return true
-    }
 
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @State private var activity: LumenActivity = .idle()
     @State private var job: Task<Void, Never>?
     @State private var showsPalette = false
-    @State private var showsSidebar = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     /// `LUMEN_CATALOG_INSPECTOR=0` starts with the inspector hidden.
     @State private var showsInspector = ProcessInfo.processInfo.environment["LUMEN_CATALOG_INSPECTOR"] != "0"
@@ -332,34 +323,18 @@ struct CatalogView: View {
         }, selection: Binding(get: { page?.rawValue }, set: { id in page = CatalogPage.allCases.first { $0.rawValue == id } }))
     }
 
-    /// One native split gives older systems all three column minima together.
-    private var legacyColumns: some View {
-        HSplitView {
-            if showsSidebar {
-                sidebarContent
-                    .frame(minWidth: CatalogLayout.sidebarMinWidth, idealWidth: CatalogLayout.sidebarIdealWidth, maxWidth: 300)
-            }
-            pageContent
-            if showsInspector { LumenInspectorPane { inspectorContent } }
-        }
-        .lumenPanelCommands(leading: $showsSidebar, trailing: $showsInspector)
-    }
-
     @ViewBuilder
     private var columns: some View {
-        if usesLegacyColumns {
-            legacyColumns
-        } else {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                sidebarContent
-                    .lumenSidebarToggle(columnVisibility: $columnVisibility)
-                    .navigationSplitViewColumnWidth(min: CatalogLayout.sidebarMinWidth, ideal: CatalogLayout.sidebarIdealWidth, max: 300)
-            } detail: {
-                pageContent
-                    .lumenPanelCommands(trailing: $showsInspector)
-                    .lumenInspector(isPresented: $showsInspector) { inspectorContent }
-            }
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            sidebarContent
+                .lumenSidebarToggle(columnVisibility: $columnVisibility)
+                .navigationSplitViewColumnWidth(min: CatalogLayout.sidebarMinWidth, ideal: CatalogLayout.sidebarIdealWidth, max: 300)
+        } detail: {
+            pageContent
+                .lumenPanelCommands(trailing: $showsInspector)
+                .lumenInspector(isPresented: $showsInspector) { inspectorContent }
         }
+
     }
 
     var body: some View {
@@ -369,12 +344,6 @@ struct CatalogView: View {
         .lumenCommandPalette(isPresented: $showsPalette, commands: paletteCommands, scopes: CatalogPalette.scopes,
                              recentsKey: "catalog.palette.recents", query: CatalogPalette.query, shortcut: nil)
         .toolbar {
-            if usesLegacyColumns {
-                ToolbarItem(placement: .navigation) {
-                    LumenPanelToggle(edge: .leading, isOn: $showsSidebar, registersShortcut: false)
-                }
-                .lumenToolbarPlatter(chromeStyle)
-            }
             // Each item takes the chrome style's platter rule: bare in `.drawn`, the system's under `.glass`.
             ToolbarItem(placement: .navigation) {
                 LumenToolbarIdentity("Lumen Catalog", subtitle: "~/Developer/Lumen", systemImage: "lumen.lens", hue: .hueViolet)
@@ -406,8 +375,9 @@ struct CatalogView: View {
                 try? await Task.sleep(for: .seconds(4.5))
                 showsPalette = true
             }
-            // `LUMEN_CATALOG_SETTINGS=1` also opens the Settings window (for screenshots and demos).
-            if ProcessInfo.processInfo.environment["LUMEN_CATALOG_SETTINGS"] == "1" {
+            // Open the real Settings scene for window captures; keep the original launch alias.
+            if ProcessInfo.processInfo.environment["LUMEN_CATALOG_OPEN_SETTINGS"] == "1"
+                || ProcessInfo.processInfo.environment["LUMEN_CATALOG_SETTINGS"] == "1" {
                 try? await Task.sleep(for: .milliseconds(600))
                 openSettings()
             }
@@ -415,17 +385,11 @@ struct CatalogView: View {
     }
 }
 
-/// Keep the window minimum outside the native columns' sizing preferences. Older systems
-/// otherwise add the leading column to this whole-window minimum a second time.
+/// The minimum for the native Catalog columns.
 struct CatalogWindowMinimum: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 27, *) {
-            content.frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
-        } else {
-            GeometryReader { _ in content }
-                .frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
-        }
+        content.frame(minWidth: CatalogLayout.windowMinWidth, minHeight: 640)
     }
 }
 
@@ -954,7 +918,7 @@ struct MenusPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            PageHeader(title: "Menus", summary: "Menu-bar and context menus stay native and gain colored tiles. The command menu is Lumen’s one custom menu surface.")
+            PageHeader(title: "Menus", summary: "Native menus follow the system’s image visibility. Meaningful color glyphs can stay visible; Lumen’s own panels keep their tiles.")
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 12) {
                     Menu {
@@ -973,6 +937,7 @@ struct MenusPage: View {
                         .lumenCommandMenu(isPresented: $showCommands, entries: Self.entries)
                         .fixedSize()
                 }
+                CatalogNativeMenuExample().frame(width: 190, height: 28)
                 // Under the buttons, so they keep their labels at the window's minimum (live P1-2).
                 Text("Right-click the card below for a context menu, or use the Lumen menu in the menu bar.")
                     .font(.callout).foregroundStyle(.lumen(.fgTertiary))
@@ -1007,15 +972,16 @@ struct MenusPage: View {
 struct SettingsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PageHeader(title: "Settings", summary: "A separate window (⌘,) with colored tabs, native grouped forms and native controls; changes apply at once.")
+            PageHeader(title: "Settings", summary: "A complete settings window (⌘,) with sidebar search, selection history and native controls; changes apply at once.")
             HStack(spacing: 12) {
                 SettingsLink { Label("Open Settings…", systemImage: "gearshape") }
-                Text("Below: the sidebar layout for apps with many categories.").font(.callout).foregroundStyle(.lumen(.fgTertiary))
+                Text("Open the window to inspect the stock sidebar and its chrome.").font(.callout).foregroundStyle(.lumen(.fgTertiary))
             }
-            // At its real minimum (sidebar + pane), scaled to the page as the other fixed designs
-            // are, so the pane's rows never squeeze into truncated values (LIVE-05).
-            CatalogScaledPreview(width: LumenSettingsSidebarView.sidebarMinWidth + LumenSettingsSidebarView.detailMinWidth + 60, height: 420) {
-                LumenSettingsSidebarView(CatalogSettings.categories)
+            LumenSectionHeader("Tabbed settings parts")
+            Text("The TabView sample preserves the individual pane and tab APIs. Window acceptance uses the real Settings scene above.")
+                .font(.callout).foregroundStyle(.lumen(.fgTertiary))
+            CatalogScaledPreview(width: 620, height: 460) {
+                CatalogSettings()
                     .clipShape(.rect(cornerRadius: 10))
                     .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.lumen(.borderSubtle)) }
             }
@@ -1079,9 +1045,20 @@ struct ComponentsPage: View {
     @State private var process = "Sample"
 }
 
-// MARK: Settings window
+// MARK: Settings categories and tabbed sample
 
 struct CatalogSettings: View {
+    /// The sparse launch exercises the same stock window with two categories, without saving a
+    /// preference or changing the page's tabbed sample.
+    static var windowCategories: [LumenSettingsCategory] {
+        ProcessInfo.processInfo.environment["LUMEN_CATALOG_SETTINGS_CATEGORIES"] == "2"
+            ? Array(categories.prefix(2)) : categories
+    }
+
+    static var initialSelection: String? {
+        ProcessInfo.processInfo.environment["LUMEN_CATALOG_SETTINGS_SELECTION"]
+    }
+
     var body: some View {
         TabView {
             GeneralSettings().lumenSettingsTab("General", systemImage: "gearshape.fill", hue: .hueGraphite)
@@ -1092,10 +1069,10 @@ struct CatalogSettings: View {
     }
 
     static let categories: [LumenSettingsCategory] = [
-        LumenSettingsCategory(id: "general", title: "General", systemImage: "gearshape.fill", hue: .hueGraphite,
-                              keywords: ["startup", "updates"]) { GeneralSettings() },
-        LumenSettingsCategory(id: "appearance", title: "Appearance", systemImage: "paintpalette.fill", hue: .hueViolet,
-                              keywords: ["theme", "accent", "density"]) { AppearanceSettings() },
+        LumenSettingsCategory(id: "engine", title: "Engine", systemImage: "cpu", hue: .hueViolet,
+                              keywords: ["analysis", "external", "path", "offline"]) { CatalogEngineSettings() },
+        LumenSettingsCategory(id: "reports", title: "Reports", systemImage: "doc.text", hue: .hueBlue,
+                              keywords: ["export", "summary", "diagnostics"]) { CatalogReportSettings() },
         LumenSettingsCategory(id: "shortcuts", title: "Shortcuts", systemImage: "command", hue: .hueBlue,
                               keywords: ["keyboard"]) { ShortcutSettings() },
         LumenSettingsCategory(id: "privacy", title: "Privacy", systemImage: "hand.raised.fill", hue: .hueTeal,

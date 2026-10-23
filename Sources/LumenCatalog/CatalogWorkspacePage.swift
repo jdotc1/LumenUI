@@ -8,6 +8,7 @@ import LumenUI
 struct WorkspacePage: View {
     @State private var layout = WorkspacePage.twoPanes
     @State private var collapsed: Set<String> = ["str"]
+    @State private var showsStackedSidebar = true
     @State private var arrangement = "files,find,-symbols,git"
     @State private var indexing = true
 
@@ -66,23 +67,28 @@ struct WorkspacePage: View {
             .clipShape(.rect(cornerRadius: 8))
             .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.lumen(.borderSubtle)) }
 
-            LumenSectionHeader("Stacked sidebar")
-            LumenStackedSidebar([
-                LumenStackedPane(id: "fn", title: "Functions", systemImage: "function", hue: .huePink, count: 3,
-                                 actions: [LumenBarAction("Add", systemImage: "plus") {}]) {
-                    VStack(alignment: .leading, spacing: 3) { Text("main"); Text("parse_header"); Text("compute(_:)") }
-                        .font(.caption).padding(.leading, 34)
-                },
-                LumenStackedPane(id: "bp", title: "Breakpoints", systemImage: "lumen.breakpoint", hue: .hueBlue, count: 0,
-                                 emptyMessage: "Click a line number to add one.") { EmptyView() },
-                LumenStackedPane(id: "str", title: "Strings", systemImage: "text.quote", hue: .hueOrange, count: 1284) {
-                    VStack(alignment: .leading, spacing: 3) { Text("Hello, Workbench!"); Text("/usr/lib/libSystem.B.dylib") }
-                        .font(.caption.monospaced()).padding(.leading, 34)
-                },
-            ], collapsed: $collapsed)
-            .frame(width: 240, height: 260)
-            .lumenSidebarBackground()
-            .clipShape(.rect(cornerRadius: 8))
+            LumenSectionHeader(title: "Stacked sidebar") {
+                LumenPanelToggle(edge: .leading, isOn: $showsStackedSidebar, shortcut: nil, registersShortcut: false)
+            }
+            .frame(width: 240)
+            if showsStackedSidebar {
+                LumenStackedSidebar([
+                    LumenStackedPane(id: "fn", title: "Functions", systemImage: "function", hue: .huePink, count: 3,
+                                     actions: [LumenBarAction("Add", systemImage: "plus") {}]) {
+                        VStack(alignment: .leading, spacing: 3) { Text("main"); Text("parse_header"); Text("compute(_:)") }
+                            .font(.caption).padding(.leading, 34)
+                    },
+                    LumenStackedPane(id: "bp", title: "Breakpoints", systemImage: "lumen.breakpoint", hue: .hueBlue, count: 0,
+                                     emptyMessage: "Click a line number to add one.") { EmptyView() },
+                    LumenStackedPane(id: "str", title: "Strings", systemImage: "text.quote", hue: .hueOrange, count: 1284) {
+                        VStack(alignment: .leading, spacing: 3) { Text("Hello, Workbench!"); Text("/usr/lib/libSystem.B.dylib") }
+                            .font(.caption.monospaced()).padding(.leading, 34)
+                    },
+                ], collapsed: $collapsed)
+                .frame(width: 240, height: 260)
+                .lumenSidebarBackground()
+                .clipShape(.rect(cornerRadius: 8))
+            }
 
             LumenSectionHeader("Sidebar pane grid")
             LumenSidebarPaneGrid(Self.panes, arrangement: $arrangement)

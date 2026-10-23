@@ -13,6 +13,33 @@ Apps pin exact commits; each release names its commit and tag.
 
 ## Unreleased
 
+## 0.58.0 (2026-10-23)
+
+### Breaking
+- The minimum deployment target is macOS 27. Clients must raise their deployment target when moving their Lumen pin. Older-system availability gates and fallback layouts are removed; macOS 27 rendering is unchanged.
+
+### Fixed
+- Window activity (C5) reads `appearsActive` on macOS 27 and later for chrome, toolbar dimming and selection. New inactive Workspace and Utility subjects cover the flat band and quiet controls. No key/main-window observers existed in this baseline; none are retained.
+- Text concatenations deprecated on macOS 26 now use `Text` interpolation; rendering is unchanged.
+- The Catalog preview takes its version from the latest tag, and the Settings sample measures its
+  controls only when a test or receipt asks.
+
+### Added
+- Settings: `.lumenSettingsScene()` completes the one-line sidebar-window recipe with native
+  compact native chrome and a stable 320 pt content height, including Settings-scene style overrides.
+  The root owns palette tint and inset sidebar selection; rich rows cap controls at 480 pt. Public query propagation
+  through `.lumenSettingsQuery(_:)` and selection customization keep hosts on the stock scaffold.
+- Catalog: the real Settings scene uses `LumenSettingsSidebarView`; the tabbed sample stays on its
+  page. `LUMEN_CATALOG_SETTINGS_CATEGORIES=2` exercises sparse settings and
+  `LUMEN_CATALOG_OPEN_SETTINGS=1` opens Settings at launch.
+- Settings live-window checks and new window golden subjects cover two and five categories in
+  drawn and glass chrome, including a deliberately bare-host negative case.
+- PRINCIPLES §12: whole-window ownership, the single navigation-title and icon-only sidebar-toggle
+  rules, measured real-window acceptance, and lessons from settings adoption. The public-root
+  inventory retains the wizard and tabbed-settings gaps.
+- Window corners (C2): measured 16 pt window reference, system-concentric sheets, welcome surfaces and floating status; native text and glass host subclasses apply container-relative masks on macOS 27.
+- Native menu image policy (C7): `LumenMenuLabel.makeMenuItem` keeps automatic visibility by default and can preserve meaningful glyphs on macOS 27. The Catalog Menus page demonstrates both in a layout that fits its 480 pt content column.
+
 ## 0.57.0 (2026-10-23)
 
 ### Fixed

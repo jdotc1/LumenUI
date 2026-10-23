@@ -151,9 +151,9 @@ import LumenConformance
     }
 
     /// The live failure, rebuilt: one window shrunk from 1250 to 900 pt in steps. AppKit dropped the
-    /// trailing panels mid-resize (before the status reacted) and never brought them back. The bar is
-    /// now one flexible toolbar item, so at every step that item is visible, spans the toolbar, and
-    /// holds the panel toggles.
+    /// trailing panels mid-resize (before the status reacted) and never brought them back. The bar
+    /// keeps its leading and panel items plus the flexible spacer at high priority; the status
+    /// yields first, and the spacer keeps the panels at the trailing edge throughout that transition.
     func testShrinkingTheWindowNeverDropsThePanels() throws {
         let tasks = [LumenTaskAction("Analyze", systemImage: "hammer.fill", hue: .hueOrange) {},
                      LumenTaskAction("Launch", systemImage: "play.fill", role: .start) {},
@@ -210,6 +210,10 @@ import LumenConformance
             XCTAssertEqual(hosted[1].visibilityPriority, .low, "\(width) pt: the status isn't the first to go")
             XCTAssertEqual(hosted[2].visibilityPriority, .high, "\(width) pt: the panels aren't kept first")
             let visible = toolbar.visibleItems ?? []
+            let spacer = try XCTUnwrap(toolbar.items.first { $0.itemIdentifier == .flexibleSpace },
+                                       "\(width) pt: no flexible spacer before the panels")
+            XCTAssertEqual(spacer.visibilityPriority, .high, "\(width) pt: the flexible spacer isn't kept with the panels")
+            XCTAssertTrue(visible.contains(spacer), "\(width) pt: the flexible spacer was dropped")
             // The panels (the last item) and the leading content stay; only the status may go.
             let panels = try XCTUnwrap(hosted.last)
             XCTAssertTrue(visible.contains(panels), "\(width) pt: the panels item was dropped")

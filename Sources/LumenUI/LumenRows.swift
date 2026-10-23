@@ -108,7 +108,7 @@ public struct LumenListRow<Trailing: View>: View {
     @Environment(\.lumenMetrics) private var metrics
     @Environment(\.lumenDensity) private var density
     @Environment(\.lumenCodeFont) private var codeFont
-    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
     @Environment(\.lumenForcedHover) private var forcedHover   // hover states in tests
@@ -132,7 +132,7 @@ public struct LumenListRow<Trailing: View>: View {
 
     public var body: some View {
         let state = LumenRowState.resolve(isSelected: isSelected, isFocused: isFocused, isHovered: isHovered || forcedHover,
-                                          isEnabled: isEnabled, isActiveWindow: activeState != .inactive)
+                                          isEnabled: isEnabled, isActiveWindow: appearsActive)
         let colors = LumenRowColors(state, context: context, palette: palette)
         HStack(spacing: metrics.spacing.s3) {
             if let systemImage {

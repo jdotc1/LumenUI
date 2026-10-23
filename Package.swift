@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Lumen",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("27.0")],
     products: [
         .library(name: "LumenTokens", targets: ["LumenTokens"]),
         .library(name: "LumenUI", targets: ["LumenUI"]),

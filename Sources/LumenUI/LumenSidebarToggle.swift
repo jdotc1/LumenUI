@@ -24,9 +24,7 @@ private struct LumenSidebarToggleModifier: ViewModifier {
             .toolbar(removing: chromeStyle == .drawn ? .sidebarToggle : nil)
             .toolbar {
                 if chromeStyle == .drawn {
-                    if #available(macOS 26, *) {
-                        ToolbarSpacer(.flexible, placement: .automatic)
-                    }
+                    ToolbarSpacer(.flexible, placement: .automatic)
                     // Automatic placement belongs to this sidebar column; navigation placement
                     // would join the identity after the tracking separator.
                     ToolbarItem(id: "lumen.sidebarToggle", placement: .automatic) {

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import LumenTokens
 @testable import LumenUI
 
 /// Toolbar state coverage: one inactive-window look for every Lumen toolbar piece (L1), the identity
@@ -50,19 +51,28 @@ final class LumenToolbarStateTests: XCTestCase {
         XCTAssertGreaterThan(try maxChroma(reference), 60, "the reference swatch must render in color")
         try XCTSkipIf(try maxChroma(reference.saturation(0)) >= 6,
                       "ImageRenderer does not desaturate an independent SwiftUI reference swatch in this process")
-        let activeChroma = try pieces.map { try maxChroma($0.view.environment(\.controlActiveState, .key)) }
+        let activeChroma = try pieces.map { try maxChroma($0.view.environment(\.appearsActive, true)) }
         XCTAssertGreaterThan(activeChroma.max() ?? 0, 60,
                              "Active, build, run, the identity tile and the status keep their color")
         for piece in pieces {
-            XCTAssertLessThan(try maxChroma(piece.view.environment(\.controlActiveState, .inactive)), 6,
+            XCTAssertLessThan(try maxChroma(piece.view.environment(\.appearsActive, false)), 6,
                               "Inactive, \(piece.name) must go grey like the panel toggles")
         }
+    }
+
+    func testInactiveBandMatchesImageAndWindowPaths() throws {
+        let view = LumenTitlebarBackground().environment(\.appearsActive, false)
+        let variant = LumenSnapshot.Variant(themeID: LumenThemes.standardID, colorScheme: .light)
+        let size = CGSize(width: 80, height: 40)
+        let image = try XCTUnwrap(LumenSnapshot.png(of: view, size: size, variant: variant, registry: .core))
+        let window = try XCTUnwrap(LumenSnapshot.png(of: view, size: size, variant: variant, registry: .core, renderer: .window))
+        XCTAssertEqual(LumenSnapshot.compare(image, window).differingPixelFraction, 0)
     }
 
     func testNestedToolbarDimmingAppliesOnce() throws {
         let square = Color.black.frame(width: 10, height: 10)
             .lumenToolbarDimming().lumenToolbarDimming()
-            .environment(\.controlActiveState, .inactive)
+            .environment(\.appearsActive, false)
         let (data, width, height) = try pixels(square)
         let centre = ((height / 2) * width + width / 2) * 4
         // 55% black over white: about 115. Dimmed twice it would be about 178.

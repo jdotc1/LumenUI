@@ -1,6 +1,6 @@
 # Glass policy
 
-macOS 26 and 27 draw the system's chrome in Liquid Glass: toolbar platters, sidebars, popovers,
+macOS 27 draws the system's chrome in Liquid Glass: toolbar platters, sidebars, popovers,
 menus and the floating controls over content. Lumen's §1 separates behavior (must match macOS)
 from look (Lumen's). Glass is both: a look, and a system behavior that reacts to Reduce
 Transparency, Increase Contrast and, on 27, the user's transparency slider. This document is the
@@ -45,7 +45,7 @@ checked. Menus are dense text over a list: glass under them is glass under conte
    The goldens, the validator and every Catalog page are recorded in it; `.glass` gets its own
    goldens for a bounded subset (the surfaces in the navigation row above) on the OS of record
    (macOS 27, D5), recorded through a real window because offscreen renders have no backdrop.
-5. **Degrade, never break.** `.glass` draws as `.drawn` below macOS 26, when Reduce Transparency
+5. **Degrade, never break.** `.glass` draws as `.drawn` when Reduce Transparency
    is on, and in offscreen renders (`ImageRenderer` and the goldens' image renderer). The
    resolution happens once, in the environment, so every surface in a window agrees.
 6. **Nothing else changes.** Tokens, metrics, density, keyboard behavior, focus rings, selection
@@ -58,7 +58,7 @@ checked. Menus are dense text over a list: glass under them is glass under conte
 ```swift
 public enum LumenChromeStyle: String, CaseIterable, Identifiable, Sendable {
     case drawn   // Lumen paints every ground (the default)
-    case glass   // the navigation layer uses system glass on macOS 26 and later
+    case glass   // the navigation layer uses system glass on macOS 27 and later
 }
 ```
 
@@ -70,14 +70,14 @@ public enum LumenChromeStyle: String, CaseIterable, Identifiable, Sendable {
 - `\.lumenChromeStyle` is what was asked for; `\.lumenResolvedChromeStyle` is what draws. A
   surface in the navigation layer reads the resolved value and picks its ground; it never reads
   `#available` or Reduce Transparency itself. `LumenChromeStyle.systemSupportsGlass` answers the
-  OS question for code outside a view.
+  capability for code outside a view; it is always true on supported systems.
 - Changing the style at run time (the Catalog's toggle) must not reset view state: the surfaces
   switch grounds inside `.background {}` and `.overlay {}` closures and value-based modifiers, never
   by branching around their content.
 
 ## What each surface draws
 
-| Surface | `.drawn` | `.glass` (macOS 26 and later) |
+| Surface | `.drawn` | `.glass` (macOS 27 and later) |
 |---|---|---|
 | Window toolbar (`lumenWindowChrome`) | The title bar's gradient while the window is key (`titlebar.activeTop` to `titlebar.activeBottom`), `toolbar.background` when inactive; toolbar items sit on the band with the system platter hidden (`ToolbarContent.lumenToolbarPlatter(_:)` on each item, which `LumenTopBar` applies and an app's own `.toolbar` items adopt); `.lumenSidebarToggle(columnVisibility:)` on a `NavigationSplitView` sidebar replaces the system toggle with a bare outline button matching the inspector toggle | The system platter shows under controls; direct `ToolbarItem` identities stay bare in both styles (the specialized `lumenToolbarPlatter` overload); `.lumenSidebarToggle(columnVisibility:)` keeps the system sidebar toggle; the band is flat `toolbar.background` in both window states, so the gradient never sits under glass |
 | Unified top bar (`LumenTitlebarBackground`, hidden title bar) | The same band, drawn by Lumen | Flat `toolbar.background`; the items are Lumen's controls, which draw no glass of their own |
@@ -91,17 +91,17 @@ public enum LumenChromeStyle: String, CaseIterable, Identifiable, Sendable {
 
 - Goldens: the existing set stays in `.drawn` and is not re-recorded for this policy. The `.glass`
   set is `unified-top-bar-glass` in `Tests/LumenUITests/Goldens`, recorded with the window renderer
-  on macOS 27 and skipped below 26 and under Reduce Transparency. A golden only goes in when the
+  on macOS 27 and skipped under Reduce Transparency. A golden only goes in when the
   capture holds the `.glass` look: the window renderer (`cacheDisplay`) draws no system glass, so
   the command palette has no `.glass` golden; the Catalog is its receipt.
 - Conformance: `LumenChromeStyleTests` checks the resolution rules (default `.drawn`, `.glass`
-  degrades below 26, under Reduce Transparency and offscreen), runs `backlight` on the top bar and
+  degrades under Reduce Transparency and offscreen), runs `backlight` on the top bar and
   the palette under `.glass`, and runs `surfaceSteps` on the top bar under `.glass` and on the
   palette's opaque fallback, which is what rule 3 measures against (the capture can't see the
   palette's glass, so a `.glass` scan would report steps over the bare window background).
 - The Catalog: the Glass toggle in the main window's toolbar switches every open window;
   `LUMEN_CATALOG_CHROME=glass|drawn` sets it for one launch (never saved). Both styles must show no
-  conformance findings on 26 and 27 (the M1 exit test).
+  conformance findings on macOS 27 (the M1 exit test).
 - The SDK stamp: AppKit picks the macOS 26 design (toolbar platters, glass) by the SDK a binary
   was linked against. The first M1 exit run on 27.2 showed no platters in either style because
   `swift build` stamped the Catalog `minos 14.0 sdk 14.0`: the Swift 6.4.2 driver hands ld
@@ -110,7 +110,8 @@ public enum LumenChromeStyle: String, CaseIterable, Identifiable, Sendable {
   restamps the SDK with `xcrun vtool -set-build-version macos 14.0
   <xcrun --show-sdk-version> -replace` before bundling (checked once with `otool -l`: minos 14.0,
   sdk 27.2). Package.swift gets no unsafeFlags, so apps can still depend on Lumen; an app built
-  the same way should check its own stamp. A bare `swift run LumenCatalog` is still stamped 14.0.
+  the same way should check its own stamp. The macOS 27 floor supersedes that minimum: both packaging scripts now stamp minos 27.0 and
+  the selected SDK. The older stamp above is retained as the historical receipt.
 
 - The palette's interior (chrome fix, 2026-10-19): the M1 exit screenshots on 27.2 showed the
   scope track (`bg.insetRaised` at 60 %) as an opaque band across the glass. Under `.glass` it is
@@ -138,7 +139,7 @@ public enum LumenChromeStyle: String, CaseIterable, Identifiable, Sendable {
   replace the system toggle (`.toolbar(removing: .sidebarToggle)` plus `LumenPanelToggle`) is C4's
   call. The maintainer decided on 2026-10-22: `.drawn` replaces it with `LumenPanelToggle`, `.glass` keeps the
   system toggle, and C4 fixes the default-width overflow; the hairline scope track and the Midnight
-  tile-plate exclusion are confirmed. The macOS 26 run waits for a 26 machine.
+  tile-plate exclusion are confirmed. The macOS 27 floor retires the pending macOS 26 run.
 
 - C4 partial (2026-10-22): the shared sidebar modifier uses the split view's column-visibility binding and swaps toolbar items without replacing the content subtree. Native sidebar menu actions remain available. The Catalog uses `LumenToolbarStatus(_:minWidth:)`: the full label and percentage set its natural width, and measured native item allocations limit it to the available room before middle truncation. Its 180 pt floor preserves native overflow. The deprecated `idealWidth:` overload forwards to this content-sizing behavior. Its navigation placement follows the identity, avoiding the independent principal-item centering constraint. The shared sidebar modifier positions its outline button before the native sidebar tracking separator. Narrow-window overflow remains system-owned. Fixed-width status initializers and existing golden subjects are unchanged.
 

@@ -319,9 +319,9 @@ public struct LumenStringLiteral: View {
     public var body: some View {
         Self.parts(text).reduce(Text(verbatim: "")) { result, part in
             switch part {
-            case .literal(let s): result + Text(verbatim: s).foregroundColor(palette[literalToken])
-            case .escape(let s): result + Text(verbatim: s).foregroundColor(palette[LumenToken.Code.keyword])
-            case .format(let s): result + Text(verbatim: s).foregroundColor(palette[LumenToken.Code.number])
+            case .literal(let s): Text("\(result)\(Text(verbatim: s).foregroundColor(palette[literalToken]))")
+            case .escape(let s): Text("\(result)\(Text(verbatim: s).foregroundColor(palette[LumenToken.Code.keyword]))")
+            case .format(let s): Text("\(result)\(Text(verbatim: s).foregroundColor(palette[LumenToken.Code.number]))")
             }
         }
         .accessibilityLabel(text)

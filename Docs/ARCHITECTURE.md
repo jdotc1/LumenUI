@@ -9,7 +9,7 @@ keeps or brands it through themes and metrics.
 | Decision | Choice | Why |
 |---|---|---|
 | Home | Its own repository, consumed through Swift Package Manager | No app owns it. Each app pins a version and upgrades on its own schedule |
-| Platform | macOS only, macOS 14 minimum | `@Observable` needs 14; `Mutex` (macOS 15) is replaced by `OSAllocatedUnfairLock` |
+| Platform | macOS only, macOS 27 minimum | Clients must raise their deployment target when moving their Lumen pin |
 | Language | Swift 6 language mode, strict concurrency | Matches every app |
 | Name | Lumen; libraries `LumenTokens`, `LumenUI` and `LumenConformance` (app test targets and Catalog metadata); executables `lumen-theme` and `LumenCatalog` | Neutral, not tied to an app |
 

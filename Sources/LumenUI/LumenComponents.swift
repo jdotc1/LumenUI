@@ -516,8 +516,7 @@ struct LumenStateLink: View {
 }
 
 extension View {
-    /// The pointing-hand pointer on macOS 15 and later; nothing on macOS 14, which lacks
-    /// `pointerStyle`.
+    /// The pointing-hand pointer for links.
     func lumenLinkPointer() -> some View {
         modifier(LumenLinkPointer())
     }
@@ -548,11 +547,7 @@ struct EmptyStateLinkStyle: ButtonStyle {
 
 private struct LumenLinkPointer: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(macOS 15, *) {
-            content.pointerStyle(.link)
-        } else {
-            content
-        }
+        content.pointerStyle(.link)
     }
 }
 

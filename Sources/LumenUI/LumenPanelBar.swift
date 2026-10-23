@@ -20,7 +20,7 @@ public struct LumenPrimaryButtonStyle: ButtonStyle {
         @Environment(\.lumenPalette) private var palette
         @Environment(\.lumenMetrics) private var metrics
         @Environment(\.isEnabled) private var isEnabled
-        @Environment(\.controlActiveState) private var activeState
+        @Environment(\.appearsActive) private var appearsActive
         @State private var isHovered = false
         @Environment(\.lumenForcedHover) private var forcedHover   // hover states in tests
 
@@ -38,7 +38,7 @@ public struct LumenPrimaryButtonStyle: ButtonStyle {
                             .overlay { Capsule(style: .circular).strokeBorder(palette[.borderDefault], lineWidth: metrics.stroke.hairline) }
                     }
                 }
-                .saturation(activeState == .inactive ? 0.4 : 1)
+                .saturation(!appearsActive ? 0.4 : 1)
                 .lumenDisabledFade(isEnabled)
                 .contentShape(.capsule)
                 .onHover { isHovered = $0 }

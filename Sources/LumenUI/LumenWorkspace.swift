@@ -19,12 +19,12 @@ public extension View {
 }
 
 private struct LumenWindowChromeModifier: ViewModifier {
-    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.lumenPalette) private var palette
     @Environment(\.lumenResolvedChromeStyle) private var chromeStyle
 
     func body(content: Content) -> some View {
-        let active = activeState != .inactive && chromeStyle == .drawn
+        let active = appearsActive && chromeStyle == .drawn
         let style: AnyShapeStyle = active
             ? AnyShapeStyle(LinearGradient(colors: [palette[.titlebarActiveTop], palette[.titlebarActiveBottom]],
                                            startPoint: .top, endPoint: .bottom))
@@ -40,14 +40,14 @@ private struct LumenWindowChromeModifier: ViewModifier {
 /// active, flat `toolbar.background` when it isn't. Flat in both states under
 /// `LumenChromeStyle.glass` (PRINCIPLES §11).
 public struct LumenTitlebarBackground: View {
-    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.lumenPalette) private var palette
     @Environment(\.lumenResolvedChromeStyle) private var chromeStyle
 
     public init() {}
 
     public var body: some View {
-        if activeState != .inactive && chromeStyle == .drawn {
+        if appearsActive && chromeStyle == .drawn {
             LinearGradient(colors: [palette[.titlebarActiveTop], palette[.titlebarActiveBottom]], startPoint: .top, endPoint: .bottom)
         } else {
             palette[.toolbarBackground]
@@ -66,13 +66,13 @@ public extension View {
 /// 45% overall (the 2:1 floor the validator checks), not 45% of 55%.
 struct LumenToolbarDimming: ViewModifier {
     static let inactiveOpacity = 0.55
-    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.lumenAncestorOpacity) private var ancestorOpacity
     @Environment(\.lumenInsideToolbarDimming) private var insideDimming
     func body(content: Content) -> some View {
         // Once: a piece inside an already dimmed group (an app's `.lumenToolbarDimming()` around
         // Lumen's own pieces) doesn't dim again.
-        let active = activeState != .inactive || insideDimming
+        let active = appearsActive || insideDimming
         let opacity = active ? 1 : Self.inactiveOpacity
         content
             .environment(\.lumenAncestorOpacity, ancestorOpacity * opacity)

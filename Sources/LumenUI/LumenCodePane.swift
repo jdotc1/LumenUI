@@ -238,7 +238,7 @@ public struct LumenCodeListing: View {
                         .frame(width: CGFloat(digits) * (codeFont ?? .standard).digitAdvance + 4, alignment: .trailing)
                         .padding(.trailing, 10)
                         .accessibilityHidden(true)
-                    lines[index].reduce(Text(verbatim: "")) { $0 + Text(verbatim: $1.text).foregroundColor(palette[$1.token]) }
+                    lines[index].reduce(Text(verbatim: "")) { Text("\($0)\(Text(verbatim: $1.text).foregroundColor(palette[$1.token]))") }
                         .font((codeFont ?? .standard).font())
                         .lineLimit(1)
                         .textSelection(.enabled)

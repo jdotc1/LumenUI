@@ -371,7 +371,7 @@ public struct LumenCommandPalette: View {
     /// `menu.background` in `.drawn`; system glass in `.glass` (PRINCIPLES §11).
     @ViewBuilder private var paletteGround: some View {
         let shape = RoundedRectangle(cornerRadius: metrics.radius.xl, style: .continuous)
-        if chromeStyle == .glass, #available(macOS 26, *) {
+        if chromeStyle == .glass {
             Color.clear.glassEffect(.regular, in: shape)
         } else {
             shape.fill(palette[.menuBackground])

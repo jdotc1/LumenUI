@@ -78,7 +78,7 @@ public struct LumenStackFrameList: View {
     @Environment(\.lumenMetrics) private var metrics
     @Environment(\.lumenDensity) private var density
     @Environment(\.lumenCodeFont) private var codeFont
-    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.appearsActive) private var appearsActive
     @State private var hovered: Int?
     @Environment(\.lumenEmptyMessage) private var emptyMessage
     @Environment(\.lumenRendersOffscreen) private var rendersOffscreen
@@ -129,7 +129,7 @@ public struct LumenStackFrameList: View {
             .frame(minHeight: density.detailedRowHeight(in: metrics.layout))
             // The navigation family's quiet selection (§10), quieter in an inactive window; hover is
             // the one hover fill.
-            .background(selected ? LumenRowColors(LumenRowState.resolve(isSelected: true, isActiveWindow: activeState != .inactive),
+            .background(selected ? LumenRowColors(LumenRowState.resolve(isSelected: true, isActiveWindow: appearsActive),
                                                   context: .content, palette: palette).fill
                         : hovered == frame.index ? palette.hoverFill(metrics) : .clear,
                         in: .rect(cornerRadius: metrics.radius.sm, style: .continuous))
@@ -369,7 +369,7 @@ public struct LumenConsole: View {
     private func text(for line: LumenConsoleLine) -> Text {
         switch line.kind {
         case .command:
-            Text(prompt + " ").font(monoBold).foregroundColor(palette[.accent]) + Text(line.text).font(monoBold).foregroundColor(palette[.fgPrimary])
+            Text("\(Text(prompt + " ").font(monoBold).foregroundColor(palette[.accent]))\(Text(line.text).font(monoBold).foregroundColor(palette[.fgPrimary]))")
         case .output:
             Text(line.text).font(mono).foregroundColor(palette[.fgSecondary])
         case .stop:

@@ -132,24 +132,16 @@ public struct LumenTopBar<Leading: View, Center: View, Trailing: View>: View {
     /// Leading content, the status, and the trailing panels as three items. AppKit sizes each SwiftUI
     /// item at its ideal width (it can't be made flexible) and, short of room, drops items whole, last
     /// first and never back into the overflow menu; so the status goes first (`LumenToolbarPriorities`
-    /// gives it the low visibility priority) and the panels and leading content are kept.
+    /// gives it the low native priority) and the panels, leading content and flexible space are kept.
     @ToolbarContentBuilder private var toolbarItems: some ToolbarContent {
-        if #available(macOS 26, *) {
-            // Bare on the glow in `.drawn`: no shared glass platter behind them. `.glass` lets the
-            // system's platter show (PRINCIPLES §11).
-            ToolbarItem(placement: .navigation) { leadingItem }.lumenToolbarPlatter(chromeStyle)
-            if Center.self != EmptyView.self {
-                ToolbarItem(placement: .navigation) { centerItem }.lumenToolbarPlatter(chromeStyle)
-            }
-            ToolbarSpacer(.flexible)
-            ToolbarItem(placement: .primaryAction) { trailingItem }.lumenToolbarPlatter(chromeStyle)
-        } else {
-            ToolbarItem(placement: .navigation) { leadingItem }
-            if Center.self != EmptyView.self {
-                ToolbarItem(placement: .navigation) { centerItem }
-            }
-            ToolbarItem(placement: .primaryAction) { trailingItem }
+        // Bare on the glow in `.drawn`: no shared glass platter behind them. `.glass` lets the
+        // system's platter show (PRINCIPLES §11).
+        ToolbarItem(placement: .navigation) { leadingItem }.lumenToolbarPlatter(chromeStyle)
+        if Center.self != EmptyView.self {
+            ToolbarItem(placement: .navigation) { centerItem }.lumenToolbarPlatter(chromeStyle)
         }
+        ToolbarSpacer(.flexible)
+        ToolbarItem(placement: .primaryAction) { trailingItem }.lumenToolbarPlatter(chromeStyle)
     }
 
     private func compact(_ item: some View) -> some View {

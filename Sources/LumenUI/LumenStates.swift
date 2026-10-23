@@ -222,7 +222,7 @@ public struct LumenBanner: View {
     }
 
     private var text: some View {
-        ((title.map { Text("\($0)  ").fontWeight(.semibold) } ?? Text("")) + Text(message))
+        Text("\(title.map { Text("\($0)  ").fontWeight(.semibold) } ?? Text(""))\(Text(message))")
             .font(metrics.typography.callout)
             .foregroundStyle(palette[.fgPrimary])
             .lumenWrapsWithoutTruncating()

@@ -55,7 +55,7 @@ public struct LumenModeSwitcher<Mode: Hashable>: View {
     @Environment(\.lumenPalette) private var palette
     @Environment(\.lumenMetrics) private var metrics
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.lumenModeSwitcherPlacement) private var placement
     @Environment(\.lumenTopBarHostsInToolbar) private var hostsInToolbar
@@ -117,7 +117,7 @@ public struct LumenModeSwitcher<Mode: Hashable>: View {
 
     private func segment(_ mode: Mode, showsLabels: Bool) -> some View {
         let selected = mode == selection
-        let active = activeState != .inactive
+        let active = appearsActive
         return Button { selection = mode } label: {
             HStack(spacing: metrics.spacing.s2) {
                 if let symbol = systemImage(mode) {

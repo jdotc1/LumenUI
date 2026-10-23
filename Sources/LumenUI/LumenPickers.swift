@@ -613,8 +613,7 @@ public struct LumenManagedToolRow<MenuContent: View>: View {
             HStack(spacing: metrics.spacing.s4) {
                 LumenSymbol(systemImage).font(.system(size: metrics.iconSize.large)).foregroundStyle(palette[hue])
                     .frame(width: metrics.iconSize.large)
-                (Text(name).foregroundColor(palette[.fgPrimary]).fontWeight(.semibold)
-                    + Text(version.map { "  " + $0 } ?? "").foregroundColor(palette[.fgTertiary]))
+                Text("\(Text(name).foregroundColor(palette[.fgPrimary]).fontWeight(.semibold))\(Text(version.map { "  " + $0 } ?? "").foregroundColor(palette[.fgTertiary]))")
                     .font(metrics.typography.callout)
                     .lineLimit(1)
                     .lumenNeverTruncates(name + (version.map { "  " + $0 } ?? ""))

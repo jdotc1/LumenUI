@@ -1008,7 +1008,7 @@ private struct TabDropTarget: ViewModifier {
 
     func body(content: Content) -> some View {
         if enabled {
-            content.dropDestination(for: String.self) { items, _ in drop(items) }
+            content.dropDestination(for: String.self) { items, _ in _ = drop(items) }
         } else {
             content
         }
@@ -1361,7 +1361,7 @@ public struct LumenStatusMenu<Value: Hashable>: View {
             // One Text, so the chevron stays after the value (a borderless menu puts images first). The
             // font goes on the label itself: a borderless menu ignores the one it inherits, so the
             // values were 13 pt beside the bar's caption text (LIVE-12).
-            (Text("\(label(selection)) ") + Text(Image(systemName: "chevron.down")).font(.system(size: metrics.layout.disclosureGlyph, weight: .bold)))
+            Text("\(Text("\(label(selection)) "))\(Text(Image(systemName: "chevron.down")).font(.system(size: metrics.layout.disclosureGlyph, weight: .bold)))")
                 .font(font ?? metrics.typography.caption)
         }
         .menuStyle(.borderlessButton)

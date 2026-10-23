@@ -72,13 +72,9 @@ extension EnvironmentValues {
     @Entry var lumenToolbarStatusRoom: CGFloat? = nil
 }
 
-/// Sets which of the unified bar's toolbar items AppKit gives up first when the window is too narrow:
-/// the status (temporary, like Nova's indicators) at `.low`, the leading content and the trailing
-/// panels at `.high`. AppKit otherwise drops the last item, the panels, and a dropped SwiftUI item
-/// doesn't come back through the overflow menu. It also counts the title bar band in the window's
-/// minimum height (`countBandInMinimum`): the minimum an app declares is its content's. That
-/// adjustment belongs to the window, not to one view: a remounted bar doesn't add the band again, and
-/// the last bar to leave a window (the placement turned to `.underTitleBar`) takes it back out.
+/// Counts the title bar band in the window minimum and owns native toolbar overflow priorities.
+/// Keep this policy together: SwiftUI visibilityPriority changes overflow layout on macOS 27,
+/// packing the panels left when the status overflows, even with a high-priority native spacer.
 struct LumenToolbarPriorities: NSViewRepresentable {
     let hasCenter: Bool
 
@@ -130,8 +126,7 @@ struct LumenToolbarPriorities: NSViewRepresentable {
             if let window, observed !== window {
                 NotificationCenter.default.removeObserver(self)
                 observed = window
-                // SwiftUI rebuilds toolbar items as their content changes; set the priorities again
-                // as the window resizes, when they matter.
+                // SwiftUI can rebuild toolbar items as their content changes during resizing.
                 for name in [NSWindow.willStartLiveResizeNotification, NSWindow.didResizeNotification] {
                     NotificationCenter.default.addObserver(self, selector: #selector(windowChanged), name: name, object: window)
                 }
@@ -139,11 +134,17 @@ struct LumenToolbarPriorities: NSViewRepresentable {
             schedule()
         }
 
-        @objc private func windowChanged(_ note: Notification) { apply(); countBandInMinimum() }
+        @objc private func windowChanged(_ note: Notification) {
+            applyPriorities()
+            countBandInMinimum()
+        }
 
         func schedule() {
             // The toolbar's items exist once SwiftUI has installed them, after this update.
-            DispatchQueue.main.async { [weak self] in self?.apply(); self?.countBandInMinimum() }
+            DispatchQueue.main.async { [weak self] in
+                self?.applyPriorities()
+                self?.countBandInMinimum()
+            }
         }
 
         /// Leaves the window's `BandMinimum`; the last owner out takes the band back out of the
@@ -187,12 +188,12 @@ struct LumenToolbarPriorities: NSViewRepresentable {
             }
         }
 
-        private func apply() {
+        private func applyPriorities() {
             guard let toolbar = window?.toolbar else { return }
             let hosted = toolbar.items.filter { $0.view != nil }
             let status = hasCenter && hosted.count >= 3 ? hosted[1] : nil
-            // Everything else stays, the flexible space included (it keeps the panels at the
-            // trailing edge once the status is gone).
+            // Only the temporary status yields. Preserve the spacer as well as the panels so
+            // the trailing group stays at the edge while native overflow removes the status.
             for item in toolbar.items {
                 let priority: NSToolbarItem.VisibilityPriority = item === status ? .low : .high
                 if item.visibilityPriority != priority { item.visibilityPriority = priority }
@@ -201,15 +202,10 @@ struct LumenToolbarPriorities: NSViewRepresentable {
     }
 }
 
-/// Hides the window toolbar's own title where the OS lets a view do it (the scene's
-/// `.windowToolbarStyle(.unifiedCompact(showsTitle: false))` covers older systems).
+/// Hides the window toolbar's own title.
 struct LumenToolbarTitleRemoval: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(macOS 15, *) {
-            content.toolbar(removing: .title)
-        } else {
-            content
-        }
+        content.toolbar(removing: .title)
     }
 }
 

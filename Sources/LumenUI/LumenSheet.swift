@@ -112,6 +112,7 @@ public struct LumenSheet<Content: View>: View {
         }
         .lumenRaisedGround()
         .background(palette[.bgElevated])
+        .lumenWindowCornerClip()
     }
 
     private func body(of content: Content) -> some View {

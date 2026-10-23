@@ -176,7 +176,7 @@ public enum LumenSnapshot {
             // Round layout to the capture's pixel grid, not the display's.
             .environment(\.displayScale, scale)
             // The window is never key; draw as the key window does, as the image renderer does.
-            .environment(\.controlActiveState, .key)
+            .environment(\.appearsActive, true)
             .tint(palette[.accent])
         let host = NSHostingView(rootView: AnyView(content))
         host.sizingOptions = []

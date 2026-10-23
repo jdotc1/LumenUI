@@ -1,7 +1,6 @@
 import os
 
-/// A small lock-protected box. Lumen supports macOS 14, so it cannot use `Mutex`
-/// (Synchronization, macOS 15); this wraps `OSAllocatedUnfairLock` instead.
+/// A small lock-protected box wrapping `OSAllocatedUnfairLock`.
 ///
 /// The box is `@unchecked Sendable` because it holds values that are not `Sendable` (caches of
 /// `NSColor`, dispatch sources) and reaches them only while holding the lock.

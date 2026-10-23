@@ -19,7 +19,7 @@ public struct LumenStoreConfiguration: Sendable, Hashable {
     /// that exercise persistence use a unique suite and remove it afterwards.
     public var defaultsSuiteName: String?
     /// How the navigation layer's chrome draws (PRINCIPLES §11). `.drawn`, the default, is
-    /// Lumen's own chrome; `.glass` uses system glass there on macOS 26 and later.
+    /// Lumen's own chrome; `.glass` uses system glass there on macOS 27 and later.
     public var chromeStyle: LumenChromeStyle = .drawn
 
     public init(appName: String, themesDirectory: URL? = nil, defaultThemeID: String? = nil, defaultsSuiteName: String? = nil) {

@@ -494,21 +494,15 @@ public struct LumenSettingsCard<Content: View>: View {
 
     public var body: some View {
         Group {
-            if #available(macOS 15, *) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Group(subviews: content) { rows in
-                        ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                            row.padding(.horizontal, metrics.spacing.s4).padding(.vertical, metrics.spacing.s3)
-                            if index < rows.count - 1 {
-                                Rectangle().fill(palette[.borderSubtle]).frame(height: metrics.stroke.hairline).padding(.horizontal, metrics.spacing.s4)
-                            }
+            VStack(alignment: .leading, spacing: 0) {
+                Group(subviews: content) { rows in
+                    ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                        row.padding(.horizontal, metrics.spacing.s4).padding(.vertical, metrics.spacing.s3)
+                        if index < rows.count - 1 {
+                            Rectangle().fill(palette[.borderSubtle]).frame(height: metrics.stroke.hairline).padding(.horizontal, metrics.spacing.s4)
                         }
                     }
                 }
-            } else {
-                // macOS 14 can't enumerate a view's children: rows are spaced, without hairlines.
-                VStack(alignment: .leading, spacing: metrics.spacing.s4) { content }
-                    .padding(.horizontal, metrics.spacing.s4).padding(.vertical, metrics.spacing.s3)
             }
         }
         .lumenRaisedGround()

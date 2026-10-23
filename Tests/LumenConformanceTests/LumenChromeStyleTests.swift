@@ -22,7 +22,7 @@ final class LumenChromeStyleTests: XCTestCase {
         XCTAssertEqual(LumenChromeStyle.resolved(.glass, reduceTransparency: true, rendersOffscreen: false), .drawn)
         XCTAssertEqual(LumenChromeStyle.resolved(.glass, reduceTransparency: false, rendersOffscreen: true), .drawn)
         XCTAssertEqual(LumenChromeStyle.resolved(.glass, reduceTransparency: false, rendersOffscreen: false),
-                       LumenChromeStyle.systemSupportsGlass ? .glass : .drawn)
+                       .glass)
     }
 
     private static let commands: [LumenCommand] = [
@@ -64,7 +64,6 @@ final class LumenChromeStyleTests: XCTestCase {
     /// window capture draws no system glass, so a `.glass` scan would see its rows on the bare
     /// window background and report steps no one sees (two short ones at the keycaps and footer).
     func testGlassSurfacesHaveNoSurfaceSteps() throws {
-        try XCTSkipUnless(LumenChromeStyle.systemSupportsGlass, "glass needs macOS 26 or later")
         for variant in [LumenSnapshot.Variant(themeID: LumenThemes.standardID, colorScheme: .dark),
                         LumenSnapshot.Variant(themeID: LumenThemes.standardID, colorScheme: .light)] {
             XCTAssertEqual(LumenConformance.surfaceSteps(sizes: [CGSize(width: 1000, height: 40)], variant: variant) { topBar(.glass) }

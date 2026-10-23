@@ -71,6 +71,12 @@ shortcut. ⌘1…⌘9 clash with apps that use them for tabs or view modes (Safa
 
 ## Menu bar
 
+Native menu images use AppKit’s automatic visibility: macOS 27 typically hides them. Reserve `LumenMenuLabel.makeMenuItem(imageCarriesMeaning: true)` for glyphs whose
+color conveys information, such as a theme swatch or status. It sets `preferredImageVisibility`
+to `.visible` on 27 and leaves earlier systems alone. Assign the returned item’s target/action
+when adding it to an `NSMenu`. SwiftUI menu labels keep the native default. The command menu
+and launcher are Lumen panels and keep their tiles.
+
 Every toolbar command is also in the menu bar. Add `LumenViewCommands()` to your scene's
 `.commands` and publish the window's panels with `.lumenPanelCommands(leading:bottom:trailing:)`:
 

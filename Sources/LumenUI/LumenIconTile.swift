@@ -270,7 +270,7 @@ extension LumenTileColors {
 ///
 /// Native menus keep their structure: highlighting, keyboard navigation, submenus, shortcuts and
 /// accessibility all stay the system's. Lumen adds only the colored tile, rendered as a
-/// non-template image so the menu shows its color.
+/// non-template image. AppKit decides its visibility (usually hidden on macOS 27).
 public struct LumenMenuLabel: View {
     public let title: String
     public let systemImage: String
@@ -283,6 +283,18 @@ public struct LumenMenuLabel: View {
         self.title = title
         self.systemImage = systemImage
         self.hue = hue
+    }
+
+    /// Builds an item for an AppKit menu. Set its target/action (or submenu) as usual.
+    /// Ordinary images keep the system default; reserve `imageCarriesMeaning` for a theme
+    /// swatch or status color. SwiftUI `Menu` labels do not expose their backing `NSMenuItem`.
+    @MainActor
+    public func makeMenuItem(imageCarriesMeaning: Bool = false, colorScheme: ColorScheme = .light,
+                             scale: CGFloat = 2) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.image = LumenIconTile.image(systemImage, hue: hue, size: 16, colorScheme: colorScheme, scale: scale)
+        item.preferredImageVisibility = imageCarriesMeaning ? .visible : .automatic
+        return item
     }
 
     public var body: some View {

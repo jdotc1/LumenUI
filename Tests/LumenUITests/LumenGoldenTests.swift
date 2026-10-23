@@ -165,6 +165,12 @@ final class LumenGoldenTests: XCTestCase {
 
     func testWelcomeWindow() { check(Self.welcome, "welcome", CGSize(width: 760, height: 460)) }
 
+    func testWelcomeWindowConcentric27() {
+        check(Self.welcome.lumenRendersOffscreen()
+                .containerShape(RoundedRectangle(cornerRadius: LumenRadius.window)),
+              "welcome-concentric-27", CGSize(width: 760, height: 460), renderer: .window)
+    }
+
     func testToolbarPieces() {
         let tasks = [
             LumenTaskAction("Build", systemImage: "hammer.fill", shortcut: KeyboardShortcut("b", modifiers: [.command])) {},
@@ -300,6 +306,25 @@ final class LumenGoldenTests: XCTestCase {
 
     func testWorkspacePieces() { check(WorkspaceSheet(), "workspace", CGSize(width: 780, height: 470)) }
 
+    func testInactiveWorkspace() {
+        check(WorkspaceSheet().environment(\.appearsActive, false), "workspace-inactive", CGSize(width: 780, height: 470))
+    }
+
+    func testInactiveUtility() {
+        check(VStack(spacing: 0) {
+            HStack {
+                LumenToolbarIdentity("Utility", subtitle: "Review files", systemImage: "folder.fill", hue: .hueBlue)
+                Spacer()
+                LumenPanelToggles(leading: .constant(true), bottom: .constant(false), trailing: .constant(true))
+            }.padding(12).background(LumenTitlebarBackground())
+            HStack(spacing: 0) {
+                Text("Files").frame(width: 140, height: 200)
+                Divider()
+                Text("Select a file to review").frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }.environment(\.appearsActive, false), "utility-inactive", CGSize(width: 580, height: 260))
+    }
+
     /// The workspace pieces that draw in SwiftUI (native menus, tables and text fields don't render offscreen).
     private struct WorkspaceSheet: View {
         @Environment(\.lumenPalette) private var palette
@@ -315,7 +340,7 @@ final class LumenGoldenTests: XCTestCase {
                     }
                 }
                 .padding(.horizontal, 14).frame(height: 50)
-                .background(LinearGradient(colors: [palette[.titlebarActiveTop], palette[.titlebarActiveBottom]], startPoint: .top, endPoint: .bottom))
+                .background(LumenTitlebarBackground())
                 HStack(alignment: .top, spacing: 0) {
                     VStack(spacing: 0) {
                         LumenSidebarSwitcher(selection: .constant("symbols"), items: [
@@ -1450,11 +1475,10 @@ final class LumenGoldenTests: XCTestCase {
 
     // MARK: Glass chrome (PRINCIPLES §11, Docs/GLASS.md)
 
-    /// `.glass` goldens are drawn in a real window (offscreen renders draw `.drawn`), on macOS 26 and
+    /// `.glass` goldens are drawn in a real window (offscreen renders draw `.drawn`), on macOS 27 and
     /// later with Reduce Transparency off. Only surfaces whose `.glass` look the capture holds
     /// faithfully get one.
     private func skipUnlessGlassDraws() throws {
-        try XCTSkipUnless(LumenChromeStyle.systemSupportsGlass, "glass needs macOS 26 or later")
         try XCTSkipIf(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency, "Reduce Transparency draws glass as drawn")
     }
 

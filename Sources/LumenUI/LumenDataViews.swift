@@ -608,8 +608,16 @@ private struct LumenFloatingStatus<Status: View, Folded: View>: ViewModifier {
             .foregroundStyle(palette[.fgSecondary])
             .padding(.horizontal, metrics.spacing.s4)
             .frame(height: metrics.layout.controlHeight)
-            .background(palette[.bgCanvas].opacity(0.88), in: .capsule)
-            .overlay { Capsule(style: .circular).strokeBorder(palette[.borderSubtle], lineWidth: metrics.stroke.hairline) }
+            .background {
+                ConcentricRectangle()
+                    .fill(palette[.bgCanvas].opacity(0.88))
+                    .overlay {
+                        GeometryReader { geometry in
+                            UnevenRoundedRectangle(cornerRadii: geometry.concentricCornerRadii ?? .init())
+                                .strokeBorder(palette[.borderSubtle], lineWidth: metrics.stroke.hairline)
+                        }
+                    }
+            }
             .fixedSize()
     }
 }
