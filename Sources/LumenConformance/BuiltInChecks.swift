@@ -135,12 +135,34 @@ struct WorkspaceWindowCheck: LumenCheck {
     static func evaluate<Window: View>(sizes: [CGSize] = [CGSize(width: 900, height: 560), CGSize(width: 1440, height: 900)],
                                                      panels: [LumenWorkspacePanels] = LumenWorkspacePanels.allCombinations,
                                                      window: (LumenWorkspacePanels) -> Window) -> [LumenConformance.Finding] {
+        WindowStructureCheck.evaluate(kind: .workspace, sizes: sizes, states: panels,
+                                      describe: LumenConformance.describe, window: window)
+    }
+}
+
+@MainActor
+struct WindowStructureCheck: LumenCheck {
+    let kind: LumenConformance.WindowKind
+    nonisolated var id: String { "lumen.windowStructure.\(kind.identifier)" }
+    nonisolated var title: String { kind.title }
+
+    func run(in context: LumenCheckContext) -> [LumenConformance.Finding] {
+        guard context.subject != nil else { return [context.missingSubject(for: title)] }
+        return context.withRenderedSubject { view, _ in
+            LumenConformance.windowStructure(kind: kind, sizes: context.sizes) { view }
+        }
+    }
+
+    static func evaluate<State, Window: View>(kind: LumenConformance.WindowKind, sizes: [CGSize], states: [State],
+                                              describe: (State) -> String, window: (State) -> Window) -> [LumenConformance.Finding] {
         var findings: [LumenConformance.Finding] = []
         var reference: CGRect?
         for size in sizes {
-            for state in panels {
-                let subject = "\(Int(size.width))×\(Int(size.height)), " + LumenConformance.describe(state)
-                let (recorder, top) = LumenConformance.layOut(window(state), size: size)
+            for state in states {
+                let stateDescription = describe(state)
+                let subject = "\(Int(size.width))×\(Int(size.height))" + (stateDescription.isEmpty ? "" : ", " + stateDescription)
+                let (recorder, top) = LumenConformance.layOut(window(state), size: size,
+                                                            respectsMinimumSize: kind == .utility)
                 for label in recorder.truncated.sorted() {
                     findings.append(LumenConformance.Finding(.layout, subject, "“\(label)” is cut short"))
                 }
@@ -157,8 +179,11 @@ struct WorkspaceWindowCheck: LumenCheck {
                     findings.append(LumenConformance.Finding(.layout, subject, clip))
                 }
                 guard let bar = recorder.frame else {
-                    findings.append(LumenConformance.Finding(.layout, subject, "has no Lumen top bar; use LumenWorkspaceWindow or .lumenTopBar"))
+                    findings.append(LumenConformance.Finding(.layout, subject, "has no Lumen top bar; use \(kind.scaffold) or .lumenTopBar"))
                     continue
+                }
+                if kind.requiresUnifiedTopBar && recorder.placement != .unified {
+                    findings.append(LumenConformance.Finding(.layout, subject, "the utility top bar must share the window buttons' line; use .unified placement"))
                 }
                 if recorder.placement == .unified {
                     // Nova's: the bar is the title bar band, so it starts at the window's top edge.

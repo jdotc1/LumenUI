@@ -11,7 +11,47 @@ the people moving an app's pin:
 
 Apps pin exact commits; each release names its commit and tag.
 
-## Unreleased
+## 0.60.0 (2026-10-23)
+
+Milestone M3, wave 1: an app text-scale preference, themed charts, and the single-window utility
+archetype with a window-structure check that later window kinds extend.
+
+### Added
+- `LumenAppearanceSettings` overloads accept an app-owned text-scale binding and configurable steps, shared by the Catalog Appearance pane.
+- App text scale through `.lumenTextScale(_:)` and `EnvironmentValues.lumenTextScale`: theme × app
+  scale clamps once to 0.9–1.3, with explicit app metrics retaining precedence. Text-bearing heights
+  grow across all densities and control/icon hit targets retain their 24 pt floors.
+- Catalog Appearance settings share stepped text scale and density across every window. Eight
+  standard-light goldens cover forms, sidebar, inspector and settings at 1.15 and 1.3.
+- Scale/density reference and C13's future 44 pt multi-touch rule (documentation only).
+- Chart-pack styling through `LumenChartStyle`, the environment and `.lumenChartStyle(series:)`,
+  with plain `LumenChartDatum` values and Swift Charts bar and line views. `LumenHistogram`
+  bins raw `[Double]` observations with automatic or explicit bin counts and drops nonfinite values. Shared empty
+  states and swatch legends follow the active theme and type ramp. The Data page has a
+  Data & Charts section with populated and empty examples.
+- `LumenUtilityWindow`, `LumenUtilityPanels` and `.lumenUtilityScene()` compose a single-window
+  utility from the native unified top bar, optional sidebar, content, inspector and status bar.
+  The Catalog's Utility Window demonstrates generic file review, tag inspection and progress;
+  README includes the adoption recipe. Regions collapse inspector-first, then sidebar, restore
+  automatically and retain explicit toggle/menu/binding intent without clipping the content.
+- `LumenConformance.windowStructure(kind:)` checks shared window structure with extensible
+  `.workspace` and `.utility` kinds. The existing `workspaceWindow` API and
+  `lumen.workspaceWindow` check retain their behavior and identity.
+
+### Fixed
+- Metrics environment reads return a stored resolution; palette roots, text-scale modifiers and
+  snapshots resolve theme × app scale when writing it, preserving modifier-order independence.
+- Utility pane visibility measures the window's proposed width independently of the native
+  split's pane minimums. Both side panes now collapse at minimum width and restore without
+  changing user intent. Tables likewise measure the pane's proposal independently of cached
+  column widths, keeping central text inside the pane through collapse and restoration.
+- Utility structure checks honor the native window's reported content minimum, including its
+  top bar, so undersized test hosts do not produce artificial toolbar and panel-overlap findings.
+  Workspace structure hosts and all structure assertions retain their existing behavior.
+
+### Validator
+- Focused chart-pack regression coverage for the existing eight series-on-canvas requirements
+  (3:1) and all 28 distinctness pairs per built-in appearance; no theme values changed.
 
 ## 0.59.0 (2026-10-23)
 

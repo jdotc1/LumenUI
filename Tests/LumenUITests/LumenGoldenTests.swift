@@ -125,6 +125,65 @@ final class LumenGoldenTests: XCTestCase {
         XCTAssertEqual(variants.map(\.label), ["standard-light", "standard-dark", "midnight-dark", "ultraviolet-dark", "contrast-light", "contrast-dark"])
     }
 
+    /// B4 is deliberately bounded: four existing subjects, two app scales, standard-light only.
+    private func textScaleSubjects(scale: Double) -> [(name: String, view: AnyView, size: CGSize, renderer: LumenSnapshot.Renderer)] {
+        [
+            ("forms", AnyView(formsScaleSample(scale: scale)), CGSize(width: 810, height: 380), .window),
+            ("sidebar", AnyView(sidebarScaleSample), CGSize(width: 300, height: 300), .image),
+            ("inspector", AnyView(InspectorSample()), CGSize(width: 300, height: 520), .image),
+            ("settings", AnyView(settingsScaleSample), CGSize(width: 700, height: 290), .image),
+        ]
+    }
+
+    func testTextScaleFormsGoldens() throws { try checkTextScaleGoldens("forms") }
+    func testTextScaleSidebarGoldens() throws { try checkTextScaleGoldens("sidebar") }
+    func testTextScaleInspectorGoldens() throws { try checkTextScaleGoldens("inspector") }
+    func testTextScaleSettingsGoldens() throws { try checkTextScaleGoldens("settings") }
+
+    private func checkTextScaleGoldens(_ name: String) throws {
+        try skipGoldensIfNeeded()
+        let variant = LumenSnapshot.Variant(themeID: LumenThemes.standardID, colorScheme: .light)
+        for scale in [1.15, 1.3] {
+            for subject in textScaleSubjects(scale: scale) where subject.name == name {
+                let size = CGSize(width: subject.size.width, height: ceil(subject.size.height * scale))
+                let name = "\(subject.name)-scale-\(scale)"
+                let outcome = LumenSnapshot.verify(subject.view.lumenTextScale(scale), named: name,
+                    size: size, variant: variant, registry: registry, goldenDirectory: Self.goldens,
+                    renderer: subject.renderer)
+                if let message = outcome.failureMessage { XCTFail("\(name): \(message)") }
+            }
+        }
+    }
+
+    func testTextScaleConformance() {
+        let store = TestPack.store()
+        for subject in textScaleSubjects(scale: 1.3) {
+            let view = subject.view.lumenPaletteRoot(store: store, windowChrome: false)
+                .lumenTextScale(1.3).environment(\.lumenDensity, .compact)
+                .environment(\.colorScheme, .light)
+            let size = CGSize(width: subject.size.width, height: ceil(subject.size.height * 1.3))
+            XCTAssertEqual(LumenConformance.truncation(sizes: [size], of: { view }), [], subject.name)
+            XCTAssertEqual(LumenConformance.overflow(sizes: [size], of: { view }), [], subject.name)
+            XCTAssertEqual(LumenConformance.narrowSizing([(subject.name, AnyView(view))],
+                                                        referenceWidth: size.width), [], subject.name)
+        }
+    }
+
+    /// The fixed master-detail fixture must accommodate regular and comfortable rows too.
+    func testTextScaleFormsDensityConformance() {
+        let store = TestPack.store()
+        for density in LumenDensity.allCases {
+            let view = formsScaleSample(scale: 1.3).lumenPaletteRoot(store: store, windowChrome: false)
+                .lumenTextScale(1.3).environment(\.lumenDensity, density)
+                .environment(\.colorScheme, .light)
+            let size = CGSize(width: 810, height: 494)
+            XCTAssertEqual(LumenConformance.truncation(sizes: [size], of: { view }), [], density.rawValue)
+            XCTAssertEqual(LumenConformance.overflow(sizes: [size], of: { view }), [], density.rawValue)
+            XCTAssertEqual(LumenConformance.narrowSizing([("forms", AnyView(view))],
+                                                        referenceWidth: size.width), [], density.rawValue)
+        }
+    }
+
     func testShowcase() { check(LumenShowcase(), "showcase", CGSize(width: 560, height: 340)) }
 
     func testBadgeTones() {
@@ -620,7 +679,11 @@ final class LumenGoldenTests: XCTestCase {
     }
 
     func testCountSectionsAndTileRail() {
-        check(VStack(alignment: .leading, spacing: 10) {
+        check(sidebarScaleSample, "count-sections", CGSize(width: 300, height: 300))
+    }
+
+    private var sidebarScaleSample: some View {
+        VStack(alignment: .leading, spacing: 10) {
             LumenSidebarSwitcher(selection: .constant("project"), items: [
                 LumenSidebarItem(id: "project", title: "Project", systemImage: "square.stack.3d.up", hue: .huePink),
                 LumenSidebarItem(id: "functions", title: "Functions", systemImage: "function", hue: .hueBlue),
@@ -636,7 +699,7 @@ final class LumenGoldenTests: XCTestCase {
                 LumenListRow("parse_header", systemImage: "lumen.pseudocode", context: .sidebar, monospaced: true)
             }
         }
-        .padding(12).frame(width: 280).lumenSidebarBackground(), "count-sections", CGSize(width: 300, height: 300))
+        .padding(12).frame(width: 280).lumenSidebarBackground()
     }
 
     func testStackAndRegisters() {
@@ -781,6 +844,10 @@ final class LumenGoldenTests: XCTestCase {
     }
 
     func testRichSettingsRows() {
+        check(settingsScaleSample, "settings-rich", CGSize(width: 700, height: 290))
+    }
+
+    private var settingsScaleSample: some View {
         let rows = { (width: CGFloat) in
             VStack(alignment: .leading, spacing: 12) {
                 LumenSettingsHeader("Appearance", systemImage: "paintpalette", hue: .hueViolet,
@@ -799,9 +866,8 @@ final class LumenGoldenTests: XCTestCase {
             }
             .frame(width: width, alignment: .leading)
         }
-        check(HStack(alignment: .top, spacing: 24) { rows(400); rows(230) }.padding(16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).background(LumenPanelFill()),
-              "settings-rich", CGSize(width: 700, height: 290))
+        return HStack(alignment: .top, spacing: 24) { rows(400); rows(230) }.padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).background(LumenPanelFill())
     }
 
     func testListingRowsAndLanes() {
@@ -968,7 +1034,11 @@ final class LumenGoldenTests: XCTestCase {
     }
 
     func testForms() {
-        check(HStack(alignment: .top, spacing: 16) {
+        check(formsScaleSample(), "forms", CGSize(width: 810, height: 380))
+    }
+
+    private func formsScaleSample(scale: Double = 1) -> some View {
+        HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 12) {
                 LumenSettingsRow("Line height", description: "A multiple of the font size.") {
                     LumenNumberField(value: .constant(1.5), in: 1...3, step: 0.1, fractionDigits: 1, unit: "× font size")
@@ -1004,13 +1074,14 @@ final class LumenGoldenTests: XCTestCase {
                                   selection: .constant("fails"), listWidth: 140) { item in
                     Text("When a build \(item.title.lowercased())…").font(.callout)
                 }
-                .frame(height: 90)
+                // Only the app-scale variants grow this fixture; existing theme goldens keep 90 pt.
+                .frame(height: 90 * scale)
             }
             .frame(width: 400)
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(InspectorFill()), "forms", CGSize(width: 810, height: 380))
+        .background(InspectorFill())
     }
 
     /// Fixture-only horizontal room for themed text; standard captures keep their layout.

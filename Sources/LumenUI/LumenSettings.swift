@@ -633,6 +633,8 @@ public struct LumenAppearanceSettings: View {
     /// The store passed to `init(store:showsGallery:)`; `nil` uses the window's (`\.lumenStore`).
     private let explicitStore: LumenThemeStore?
     private let showsGallery: Bool
+    private var textScale: Binding<Double>? = nil
+    private var textScaleSteps: [Double] = []
     @Environment(\.lumenStore) private var environmentStore
 
     /// Settings for the store of the window they appear in: the one `.lumenPaletteRoot(store:)`
@@ -651,10 +653,33 @@ public struct LumenAppearanceSettings: View {
         self.showsGallery = showsGallery
     }
 
+    /// Settings for the window's store, with an app-owned text-scale preference.
+    /// Apply the preference with `.lumenTextScale(_:)` at each window root.
+    /// - Parameter textScaleSteps: Distinct scale choices, in display order.
+    public init(textScale: Binding<Double>, textScaleSteps: [Double] = [1, 1.15, 1.3],
+                showsGallery: Bool = true) {
+        explicitStore = nil
+        self.showsGallery = showsGallery
+        self.textScale = textScale
+        self.textScaleSteps = textScaleSteps
+    }
+
+    /// Settings for `store`, with an app-owned text-scale preference.
+    /// Apply the preference with `.lumenTextScale(_:)` at each window root.
+    /// - Parameter textScaleSteps: Distinct scale choices, in display order.
+    public init(store: LumenThemeStore, textScale: Binding<Double>,
+                textScaleSteps: [Double] = [1, 1.15, 1.3], showsGallery: Bool = true) {
+        explicitStore = store
+        self.showsGallery = showsGallery
+        self.textScale = textScale
+        self.textScaleSteps = textScaleSteps
+    }
+
     public var body: some View {
         let store = explicitStore ?? environmentStore
         // Keyed by the store, so the density storage follows a store swapped in the environment.
-        LumenAppearanceSettingsForm(store: store, showsGallery: showsGallery)
+        LumenAppearanceSettingsForm(store: store, showsGallery: showsGallery,
+                                    textScale: textScale, textScaleSteps: textScaleSteps)
             .id(ObjectIdentifier(store))
     }
 }
@@ -662,14 +687,18 @@ public struct LumenAppearanceSettings: View {
 private struct LumenAppearanceSettingsForm: View {
     let store: LumenThemeStore
     let showsGallery: Bool
+    let textScale: Binding<Double>?
+    let textScaleSteps: [Double]
     @AppStorage private var densityRaw: String
 
     @Environment(\.lumenPalette) private var palette
     @Environment(\.lumenMetrics) private var metrics
 
-    init(store: LumenThemeStore, showsGallery: Bool) {
+    init(store: LumenThemeStore, showsGallery: Bool, textScale: Binding<Double>?, textScaleSteps: [Double]) {
         self.store = store
         self.showsGallery = showsGallery
+        self.textScale = textScale
+        self.textScaleSteps = textScaleSteps
         _densityRaw = AppStorage(wrappedValue: LumenDensity.regular.rawValue, store.configuration.densityDefaultsKey,
                                  store: store.configuration.defaults)
     }
@@ -677,6 +706,13 @@ private struct LumenAppearanceSettingsForm: View {
     var body: some View {
         Form {
             Section {
+                if let textScale {
+                    LabeledContent("Text scale") {
+                        LumenModeSwitcher(selection: textScale, options: textScaleSteps, style: .pill,
+                                          title: { "\($0)×" })
+                            .lumenModeSwitcherPlacement(.content)
+                    }
+                }
                 // Lumen's own controls in Lumen's own settings: the pill switcher and the themed checkbox.
                 LabeledContent("Density") {
                     LumenModeSwitcher(selection: $densityRaw, options: LumenDensity.allCases.map(\.rawValue), style: .pill,

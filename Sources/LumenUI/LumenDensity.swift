@@ -18,7 +18,8 @@ public enum LumenDensity: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Minimum height of a one-line row.
+    /// Minimum height of a one-line row, from the already text-scaled layout.
+    /// Components retain their intrinsic text height; density never rescales the type.
     public func rowHeight(in layout: LumenMetrics.Layout) -> CGFloat {
         switch self {
         case .compact: layout.rowHeightCompact

@@ -21,7 +21,7 @@ struct LumenCatalogApp: App {
         let previewData = Bundle.main.object(forInfoDictionaryKey: "LumenCatalogPreviewDataDirectory") as? String
         let store = LumenThemeStore(
             // The code pack colors the listing, pseudocode, strings and hex demos.
-            registry: LumenRegistry(packs: [.core, .code]),
+            registry: LumenRegistry(packs: [.core, .code, .chart]),
             // Saved in a suite of its own, so the Appearance settings demo (density, accent) works.
             configuration: LumenStoreConfiguration(
                 appName: isPreview ? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "LumenCatalogPreview") : "LumenCatalog",
@@ -51,8 +51,8 @@ struct LumenCatalogApp: App {
             CatalogView()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogTextScaleRoot())
                 .modifier(CatalogChromeRoot())
-                .lumenMetrics(.standard)
                 .modifier(CatalogWindowMinimum())
                 .onAppear {
                     NSApplication.shared.activate(ignoringOtherApps: true)
@@ -69,10 +69,20 @@ struct LumenCatalogApp: App {
             WorkspaceDemo()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogTextScaleRoot())
                 .modifier(CatalogChromeRoot())
-                .lumenMetrics(.standard)
                 .frame(minWidth: 1000, minHeight: 660)
         }
+
+        Window("Utility Window", id: "utility") {
+            CatalogUtilityWindow()
+                .lumenPaletteRoot(store: store)
+                .lumenDensityRoot(store: store)
+                .modifier(CatalogChromeRoot())
+                .lumenMetrics(.standard)
+        }
+        .lumenUtilityScene()
+        .defaultSize(width: CatalogUtilityWindow.defaultSize.width, height: CatalogUtilityWindow.defaultSize.height)
 
         // Workbench's structure: a hidden title bar with the app's own top bar and HSplitView columns,
         // built from Lumen's split-layout pieces. Every Lumen release is exercised here.
@@ -80,8 +90,8 @@ struct LumenCatalogApp: App {
             SplitWorkspaceDemo()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogTextScaleRoot())
                 .modifier(CatalogChromeRoot())
-                .lumenMetrics(.standard)
         }
         .windowStyle(.hiddenTitleBar)
         // Nova's compact band: the top bar's items sit on the window buttons' center line (0.44).
@@ -91,8 +101,8 @@ struct LumenCatalogApp: App {
             WorkbenchRehearsal()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogTextScaleRoot())
                 .modifier(CatalogChromeRoot())
-                .lumenMetrics(.standard)
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
@@ -103,8 +113,8 @@ struct LumenCatalogApp: App {
             CatalogWelcome()
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogTextScaleRoot())
                 .modifier(CatalogChromeRoot())
-                .lumenMetrics(.standard)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -115,10 +125,29 @@ struct LumenCatalogApp: App {
                 .background(CatalogSettingsWindowReceipt())
                 .lumenPaletteRoot(store: store)
                 .lumenDensityRoot(store: store)
+                .modifier(CatalogTextScaleRoot())
                 .modifier(CatalogChromeRoot())
         }
         .lumenSettingsScene()
     }
+}
+
+/// Shared across every Catalog scene, including windows opened after a preference change.
+enum CatalogTextScale {
+    static let key = "catalog.textScale"
+    static let steps: [Double] = [1, 1.15, 1.3]
+    static func label(_ scale: Double) -> String {
+        switch scale {
+        case 1.15: "1.15×"
+        case 1.3: "1.3×"
+        default: "1.0×"
+        }
+    }
+}
+
+struct CatalogTextScaleRoot: ViewModifier {
+    @AppStorage(CatalogTextScale.key, store: CatalogChrome.defaults) private var scale = 1.0
+    func body(content: Content) -> some View { content.lumenTextScale(scale) }
 }
 
 // MARK: Chrome style
@@ -215,7 +244,7 @@ struct CatalogCommands: Commands {
 enum CatalogPage: String, CaseIterable, Identifiable {
     case overview = "Overview", welcome = "Welcome", toolbar = "Toolbar", tiles = "Icon Tiles", menus = "Menus",
          settings = "Settings", popovers = "Popovers", glyphs = "Glyphs", components = "Components",
-         forms = "Forms & Controls", search = "Search & Navigation", data = "Data & Git", browse = "Browse", workspace = "Workspace",
+         forms = "Forms & Controls", search = "Search & Navigation", data = "Data & Git", browse = "Browse", workspace = "Workspace", utility = "Utility Window",
          states = "States & Rows", debugger = "Debugger", editor = "Editor", sheets = "Sheets & Settings", themes = "Themes", conformance = "Conformance"
     var id: String { rawValue }
 
@@ -233,6 +262,7 @@ enum CatalogPage: String, CaseIterable, Identifiable {
         case .data: "arrow.triangle.branch"
         case .browse: "square.grid.2x2.fill"
         case .workspace: "rectangle.split.3x1.fill"
+        case .utility: "macwindow"
         case .themes: "paintpalette.fill"
         case .conformance: "checkmark.shield"
         case .popovers: "text.bubble.fill"
@@ -258,6 +288,7 @@ enum CatalogPage: String, CaseIterable, Identifiable {
         case .data: .hueTeal
         case .browse: .hueYellow
         case .workspace: .hueViolet
+        case .utility: .hueTeal
         case .themes: .hueOrange
         case .conformance: .hueGreen
         case .popovers: .hueTeal
@@ -466,6 +497,7 @@ struct CatalogPageView: View {
             case .data: DataPage()
             case .browse: BrowsePage()
             case .workspace: WorkspacePage()
+            case .utility: UtilityWindowPage()
             case .states: StatesPage()
             case .debugger: DebuggerPage()
             case .editor: EditorPage()
@@ -1082,6 +1114,8 @@ struct CatalogSettings: View {
                               keywords: ["keyboard"]) { ShortcutSettings() },
         LumenSettingsCategory(id: "privacy", title: "Privacy", systemImage: "hand.raised.fill", hue: .hueTeal,
                               keywords: ["network", "analytics"]) { PrivacySettings() },
+        LumenSettingsCategory(id: "appearance", title: "Appearance", systemImage: "paintpalette.fill", hue: .hueViolet,
+                              keywords: ["theme", "density", "text", "scale"]) { AppearanceSettings() },
         LumenSettingsCategory(id: "notifications", title: "Notifications", systemImage: "bell.badge.fill", hue: .hueRed,
                               keywords: ["alerts"]) { NotificationSettings() },
     ]
@@ -1106,7 +1140,11 @@ struct GeneralSettings: View {
 }
 
 struct AppearanceSettings: View {
-    var body: some View { LumenAppearanceSettings(showsGallery: false) }
+    @AppStorage(CatalogTextScale.key, store: CatalogChrome.defaults) private var textScale = 1.0
+
+    var body: some View {
+        LumenAppearanceSettings(textScale: $textScale, showsGallery: false)
+    }
 }
 
 struct ShortcutSettings: View {

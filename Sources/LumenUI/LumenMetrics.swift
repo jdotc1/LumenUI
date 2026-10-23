@@ -298,7 +298,15 @@ public struct LumenMetrics: Sendable, Equatable {
     /// Resolves validated theme values over the standard app metrics. Missing values retain the
     /// shipped defaults. An explicit app environment override replaces this entire value.
     public static func resolving(_ theme: LumenThemeMetrics?) -> LumenMetrics {
-        guard let theme else { return .standard }
+        resolving(theme, textScale: 1)
+    }
+
+    /// Resolves the theme and app text preference together. The product is clamped to 0.9–1.3;
+    /// spacing remains the theme's independent scale. Non-finite app preferences use 1.
+    public static func resolving(_ theme: LumenThemeMetrics?, textScale: Double) -> LumenMetrics {
+        let theme = theme ?? LumenThemeMetrics()
+        let appScale = textScale.isFinite ? textScale : 1
+        let effectiveScale = min(1.3, max(0.9, (theme.typeScale ?? 1) * appScale))
         var result = LumenMetrics.standard
         result.depth = LumenDepth.resolving(theme.depth)
         if let profile = theme.radiusProfile {
@@ -314,7 +322,8 @@ public struct LumenMetrics: Sendable, Equatable {
                 result.spacing[keyPath: path] *= scale
             }
         }
-        if let scale = theme.typeScale, scale != 1 {
+        if effectiveScale != 1 {
+            let scale = effectiveScale
             for path in [\Typography.title2, \.title3, \.headline, \.body, \.bodyEmphasized, \.callout,
                          \.subheadline, \.footnote, \.caption, \.captionEmphasized, \.sectionLabel,
                          \.monoCaption, \.monoSmall, \.display, \.stat] {
@@ -349,21 +358,54 @@ public struct LumenMetrics: Sendable, Equatable {
 }
 
 extension EnvironmentValues {
-    @Entry var lumenThemeMetrics: LumenMetrics = .standard
+    @Entry var lumenThemeMetrics: LumenThemeMetrics? = nil
+    @Entry var lumenResolvedThemeMetrics: LumenMetrics = .standard
+    /// The app text-size preference. Use `.lumenTextScale(_:)` to resolve it for a subtree,
+    /// or inject it outside a palette root, which resolves it with that root's theme.
+    @Entry public var lumenTextScale: Double = 1
     @Entry var lumenAppMetrics: LumenMetrics? = nil
 
     /// Explicit app metrics win over the palette root's theme, including an explicit `.standard`.
     /// Keeping the two sources separate makes overrides independent of modifier order.
     public var lumenMetrics: LumenMetrics {
-        get { lumenAppMetrics ?? lumenThemeMetrics }
+        get { lumenAppMetrics ?? lumenResolvedThemeMetrics }
         set { lumenAppMetrics = newValue }
     }
 }
 
 extension View {
+    /// Sets an app text-size preference for this subtree. Theme scale × app scale resolves once,
+    /// clamped to 0.9–1.3; explicit `.lumenMetrics(_:)` overrides both in either modifier order.
+    public func lumenTextScale(_ scale: Double) -> some View {
+        modifier(LumenTextScaleModifier(scale: scale))
+    }
+
     /// Gives this subtree the app's metrics. Apply once at the root of each window.
     public func lumenMetrics(_ metrics: LumenMetrics) -> some View {
         environment(\.lumenMetrics, metrics)
+    }
+}
+
+// Palette roots and snapshots share the same writer. Readers only fetch the stored result.
+struct LumenThemeMetricsModifier: ViewModifier {
+    let theme: LumenThemeMetrics?
+    @Environment(\.lumenTextScale) private var textScale
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.lumenThemeMetrics, theme)
+            .environment(\.lumenResolvedThemeMetrics, LumenMetrics.resolving(theme, textScale: textScale))
+    }
+}
+
+private struct LumenTextScaleModifier: ViewModifier {
+    let scale: Double
+    @Environment(\.lumenThemeMetrics) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.lumenTextScale, scale)
+            .environment(\.lumenResolvedThemeMetrics, LumenMetrics.resolving(theme, textScale: scale))
     }
 }
 

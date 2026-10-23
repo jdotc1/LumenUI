@@ -50,6 +50,8 @@ struct DataPage: View {
         VStack(alignment: .leading, spacing: 20) {
             PageHeader(title: "Data & Git", summary: "Notices that float in and leave, outline controls, a commit history with refs and avatars, the comparison header and diff navigator, a minimap, and the commit composer with its checklist of changes.")
 
+            CatalogChartsSection()
+
             LumenSectionHeader("Semantic values")
             LumenSwitch(isOn: $narrowValues, label: "Narrow values")
             Text("Right-click a value and choose Copy to copy its full original.")

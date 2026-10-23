@@ -60,7 +60,7 @@ space, cutting off both edges, so Lumen prevents it at the source:
 - Every column declares the least width its content needs: the sidebar with
   `navigationSplitViewColumnWidth(min:)`, the inspector through `.lumenInspector`
   (`LumenLayout.inspectorColumn`), the content column with `.frame(minWidth:)`. A window's minimum
-  width is the sum of its columns' minimums.
+  width is the sum of its noncollapsing columns' minimums.
 - Content adapts before it reaches its minimum: rows of controls fold (`ViewThatFits`), chips become
   a menu, grids reflow, previews scale down, tab strips scroll. Nothing is hidden to fit.
 - Tests prove it: `LumenLayout.minimumWidth(of:)` measures the narrowest width a view lays out at,
@@ -146,6 +146,13 @@ surface (§8). `LumenConformance.workspaceWindow` checks the real window: the ba
 window's top edge with the buttons centered in it, the window has a toolbar, every item's center is
 on the buttons' center line (±1 pt) and none reaches under the buttons, the leading group and the
 panel toggles are never dropped (the status may give way), and no panel starts under the band.
+
+**Adaptive window regions:** when space runs short, collapse the inspector first, then the sidebar;
+content never collapses, and the window minimum is the content minimum. Restore automatically in
+reverse order when space returns. Explicit toggle, menu or binding choices persist: an explicitly
+hidden region never auto-restores; an explicitly shown region collapses after automatic regions,
+but still before content clips. Bound state is explicit, and resizing never overwrites intent.
+Equal-priority regions retain inspector-first order. Later archetypes reuse this rule.
 
 ## 10. One look per role
 

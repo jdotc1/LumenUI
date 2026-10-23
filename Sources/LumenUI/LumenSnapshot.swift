@@ -143,7 +143,7 @@ public enum LumenSnapshot {
             .environment(\.colorScheme, colorScheme)
             .environment(\.lumenPalette, palette)
             .environment(\.lumenStore, store)
-            .environment(\.lumenThemeMetrics, store.resolvedMetrics())
+            .modifier(LumenThemeMetricsModifier(theme: store.theme(for: .window).metrics))
             .environment(\.lumenAppMetrics, metrics == .standard ? nil : metrics)
             .environment(\.lumenRendersOffscreen, true)
             .tint(palette[.accent])   // as `.lumenPaletteRoot()` tints a real window's native controls
@@ -173,7 +173,7 @@ public enum LumenSnapshot {
             .environment(\.colorScheme, colorScheme)
             .environment(\.lumenPalette, palette)
             .environment(\.lumenStore, store)
-            .environment(\.lumenThemeMetrics, store.resolvedMetrics())
+            .modifier(LumenThemeMetricsModifier(theme: store.theme(for: .window).metrics))
             .environment(\.lumenAppMetrics, metrics == .standard ? nil : metrics)
             .environment(\.lumenRendersOffscreen, false)
             // Round layout to the capture's pixel grid, not the display's.

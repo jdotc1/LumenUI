@@ -544,6 +544,8 @@ public struct LumenTable<Row: Identifiable>: View {
                 footerBar(footer)
             }
         }
+        // Measure the pane's proposal, not the minimum sustained by cached column widths.
+        .frame(minWidth: 0, maxWidth: .infinity)
         .background {
             if !rendersOffscreen {
                 GeometryReader { proxy in Color.clear.preference(key: LumenTableWidthKey.self, value: proxy.size.width) }

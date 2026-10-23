@@ -96,6 +96,46 @@ public enum LumenConformance {
 
     // MARK: Window
 
+    /// A supported window archetype. Static values keep this set extensible: future document,
+    /// library, menu-bar and wizard kinds can be added without changing an exhaustive client switch.
+    public struct WindowKind: Hashable, Sendable {
+        let identifier: String
+        let title: String
+        let scaffold: String
+        let requiresUnifiedTopBar: Bool
+
+        private init(identifier: String, title: String, scaffold: String, requiresUnifiedTopBar: Bool) {
+            self.identifier = identifier
+            self.title = title
+            self.scaffold = scaffold
+            self.requiresUnifiedTopBar = requiresUnifiedTopBar
+        }
+
+        public static let workspace = WindowKind(identifier: "workspace", title: "Workspace window",
+                                                  scaffold: "LumenWorkspaceWindow", requiresUnifiedTopBar: false)
+        public static let utility = WindowKind(identifier: "utility", title: "Utility window",
+                                                scaffold: "LumenUtilityWindow", requiresUnifiedTopBar: true)
+    }
+
+    /// Checks the shared window structure at each size: the top bar stays at one height, native
+    /// toolbar items align with the window buttons, and regions stay below it. Also reports the
+    /// same truncation, column overflow, icon scale and backlight findings as `workspaceWindow`.
+    /// Utility windows require the unified placement; workspace windows retain `.underTitleBar`
+    /// compatibility. Run once for each visible-region state the app supports.
+    @MainActor
+    public static func windowStructure<Window: View>(kind: WindowKind,
+                                                     sizes: [CGSize] = [CGSize(width: 900, height: 560), CGSize(width: 1440, height: 900)],
+                                                     @ViewBuilder window: () -> Window) -> [Finding] {
+        WindowStructureCheck.evaluate(kind: kind, sizes: sizes, states: [()], describe: { _ in "" }, window: { _ in window() })
+    }
+
+    /// A structure check for the runner's subject, sizes and snapshot variants. Its stable ID is
+    /// `lumen.windowStructure.<kind>`; the legacy `lumen.workspaceWindow` check keeps its identity.
+    @MainActor
+    public static func windowStructure(kind: WindowKind) -> some LumenCheck {
+        WindowStructureCheck(kind: kind)
+    }
+
     /// The workspace window stays intact whatever the user shows or hides: at each size and each
     /// combination of panels, the top bar is there, at the top of the window, at one height. Hiding
     /// the inspector once pushed Workbench's top bar off screen; this catches that in the app's tests.
@@ -339,7 +379,8 @@ public enum LumenConformance {
 
     /// Lays `content` out in a real (offscreen) window of `size` and records what it reports.
     @MainActor
-    static func layOut<Content: View>(_ content: Content, size: CGSize) -> (FrameRecorder, CGFloat) {
+    static func layOut<Content: View>(_ content: Content, size: CGSize,
+                                     respectsMinimumSize: Bool = false) -> (FrameRecorder, CGFloat) {
         let recorder = FrameRecorder()
         let root = content
             .onPreferenceChange(LumenTopBarFrameKey.self) { frame in MainActor.assumeIsolated { recorder.frame = frame } }
@@ -353,7 +394,7 @@ public enum LumenConformance {
             .onPreferenceChange(LumenVisibleTextKey.self) { texts in MainActor.assumeIsolated { recorder.visibleTexts = texts } }
             .onPreferenceChange(LumenBacklightKey.self) { glows in MainActor.assumeIsolated { recorder.backlights = glows } }
             .onPreferenceChange(LumenBacklightContainerKey.self) { frames in MainActor.assumeIsolated { recorder.backlightContainers = frames } }
-        let (window, host) = offscreenWindow(AnyView(root), size: size)
+        let (window, host) = offscreenWindow(AnyView(root), size: size, respectsMinimumSize: respectsMinimumSize)
         let top = host.safeAreaInsets.top
         // The window buttons, in the same top-left coordinates SwiftUI's global frames use.
         let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { type -> CGRect? in
@@ -391,9 +432,10 @@ public enum LumenConformance {
     /// Hosts `content` in a real (offscreen) window of `size` and lays it out; close the window when
     /// done. Used for geometry checks; pixel scans use the settled snapshot renderer.
     @MainActor
-    static func offscreenWindow(_ content: AnyView, size: CGSize, appearance: NSAppearance? = nil) -> (NSWindow, NSHostingView<AnyView>) {
+    static func offscreenWindow(_ content: AnyView, size: CGSize, appearance: NSAppearance? = nil,
+                                respectsMinimumSize: Bool = false) -> (NSWindow, NSHostingView<AnyView>) {
         let host = NSHostingView(rootView: content)
-        host.sizingOptions = []
+        host.sizingOptions = respectsMinimumSize ? [.minSize] : []
         // A SwiftUI scene would install the views' toolbar items (the unified top bar's) in the
         // window's toolbar; so does a hosting view that bridges toolbars, in the scene's compact style.
         host.sceneBridgingOptions = [.toolbars]
@@ -409,6 +451,17 @@ public enum LumenConformance {
         for _ in 0..<3 {
             host.layoutSubtreeIfNeeded()
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        if respectsMinimumSize {
+            // A utility's declared minimum excludes its top bar. Respect the native host's
+            // complete content minimum after toolbar bridging has established the safe area.
+            let minimum = window.contentMinSize
+            window.setContentSize(CGSize(width: max(size.width, minimum.width),
+                                         height: max(size.height, minimum.height)))
+            for _ in 0..<3 {
+                host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+            }
         }
         return (window, host)
     }

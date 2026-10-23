@@ -212,7 +212,7 @@ private struct LumenPaletteRootModifier: ViewModifier {
         .environment(\.colorScheme, store.forcedAppearance(for: .window) ?? inheritedColorScheme)
         .environment(\.lumenPalette, palette)
         .environment(\.lumenStore, store)
-        .environment(\.lumenThemeMetrics, store.resolvedMetrics())
+        .modifier(LumenThemeMetricsModifier(theme: store.theme(for: .window).metrics))
         .tint(palette[.accent])
     }
 }

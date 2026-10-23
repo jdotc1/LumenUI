@@ -238,6 +238,8 @@ LumenSettingsPane("General", systemImage: "gearshape.fill", hue: .hueGraphite, s
 Settings { LumenSettingsSidebarView(categories) }.lumenSettingsScene()
 ```
 
+Use `LumenAppearanceSettings(textScale: $textScale, showsGallery: false)` for an app-owned text-scale row (optional `store:` and `textScaleSteps:`).
+
 Supply `[LumenSettingsCategory]`, each with its pane content. The stock scaffold owns the searchable
 source-list sidebar and palette surfaces, category tiles, Back/Forward history (⌘[ / ⌘]), matching
 icon-only sidebar toggle, category navigation title, balanced split and stable window frame. The
@@ -339,6 +341,50 @@ NavigationSplitView { sidebar } detail: {
     }
 }
 ```
+
+A single-window utility uses `LumenUtilityWindow`: the same unified top-bar placement, optional
+source list and inspector, a content pane, and optional bottom status items. The scaffold supplies
+`LumenInspector` and `LumenStatusBar`; their builders supply sections and items. The companion
+scene helper puts the native toolbar on the window buttons’ line and enforces the root’s minimum.
+
+```swift
+@State private var panels = LumenUtilityPanels()
+
+// In the app's Scene builder:
+Window("File Utility", id: "utility") {
+    LumenUtilityWindow(panels: $panels, minimumSize: CGSize(width: 640, height: 400)) {
+        fileTable
+    } sidebar: {
+        sourceList
+    } inspector: {
+        LumenInspectorSection("Tags") { tagRows }
+    } statusBar: {
+        Text("Reviewing files")
+        LumenProgressBar(0.5).frame(width: 96)
+    } topLeading: {
+        LumenToolbarIdentity("File Utility", systemImage: "doc.on.doc", hue: .hueTeal)
+    }
+    .contentMinimumWidth(640)
+    .lumenPaletteRoot()
+}
+.lumenUtilityScene()
+.commands { LumenViewCommands() }
+.defaultSize(width: 1120, height: 680)
+```
+
+Without a `panels` binding, regions start automatic. The inspector collapses first, then the
+sidebar, and they restore in reverse order when space returns. Toolbar and menu choices are
+explicit; supplying a binding makes both regions explicit. Hidden regions stay hidden, while
+explicitly shown regions collapse after automatic ones, always before content clips. Resizing
+never changes the requested state.
+
+Leave out any optional builder the utility does not need; its toggle is omitted too. The minimum
+size is the content area, excluding the native top bar. Match it to the content, toolbar and status
+items. `LumenConformance.windowStructure(kind: .utility, sizes: sizes) { utilityView }` checks the
+real native window. `windowStructure(kind:)` also supplies a check for the conformance runner;
+`.workspace` and the existing `workspaceWindow` entry point share that checker. The kind is an
+extensible value type, so later archetypes add static kinds without breaking exhaustive switches.
+The Catalog’s **Utility Window** entry opens a complete example with generic file and tag data.
 
 `.lumenPaletteRoot()` paints the active-window glow; `.lumenWindowChrome()` adds it to a window
 without that root.
