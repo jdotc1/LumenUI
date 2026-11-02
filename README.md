@@ -11,12 +11,12 @@ Repository: https://github.com/jdotc1/LumenUI
 Lumen separates reusable theme data from presentation so each host app can retain its own identity.
 
 ```mermaid
-flowchart LR
-  A["Semantic roles and theme packs"] --> B["LumenTokens checks"]
-  C["Imported / edited theme"] --> B
+flowchart TB
+  A["Theme packs"] --> B["Token checks"]
+  C["Edited theme"] --> B
   B --> D["Theme store"]
-  D --> E["Native components and layouts"]
-  E --> F["Host app / Catalog preview"]
+  D --> E["UI controls"]
+  E --> F["Host / Catalog"]
 ```
 
 - **macOS 27+**, Swift 6, SwiftUI first with AppKit where it matters.
