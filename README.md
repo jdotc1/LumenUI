@@ -6,6 +6,19 @@ Lumen serves several apps, each with its own identity.
 
 Repository: https://github.com/jdotc1/LumenUI
 
+## Visual workflow
+
+Lumen separates reusable theme data from presentation so each host app can retain its own identity.
+
+```mermaid
+flowchart LR
+  A["Semantic roles and theme packs"] --> B["LumenTokens checks"]
+  C["Imported / edited theme"] --> B
+  B --> D["Theme store"]
+  D --> E["Native components and layouts"]
+  E --> F["Host app / Catalog preview"]
+```
+
 - **macOS 27+**, Swift 6, SwiftUI first with AppKit where it matters.
 - **`LumenTokens`:** tokens, packs, registry, themes, validator, export. Plain Swift, no UI.
 - **`LumenUI`:** theme store, palette environment, metrics, density, components, and the theme
